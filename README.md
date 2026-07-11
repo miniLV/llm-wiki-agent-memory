@@ -9,12 +9,20 @@
 </p>
 
 <p align="center">
+  <strong>本地优先、纯 Markdown、无需向量数据库的 Codex / Claude Code 工程记忆。</strong>
+</p>
+
+<p align="center">
   <a href="https://github.com/miniLV/llm-wiki-agent-memory">GitHub</a> ·
   <strong>简体中文</strong> · <a href="./README.en.md">English</a>
 </p>
 
 <p align="center">
   <code>bash scripts/config-ui.sh --open</code>
+</p>
+
+<p align="center">
+  <img src="docs/assets/demo.gif" alt="LLM Wiki Agent Memory 演示" width="900" />
 </p>
 
 ## 这是什么

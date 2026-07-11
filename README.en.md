@@ -2,7 +2,11 @@
 
 Local-first agent memory for Codex and Claude Code. It turns local coding sessions into a small Obsidian-style wiki, then lets agents query that wiki from any repo when they need project history, decisions, or guardrails.
 
+**Plain Markdown, no vector database, and no hosted memory service required.**
+
 [中文](README.md)
+
+![LLM Wiki Agent Memory demo](docs/assets/demo.gif)
 
 ### What This Is
 
