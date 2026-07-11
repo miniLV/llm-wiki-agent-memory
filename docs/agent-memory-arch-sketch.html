@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LLM Wiki Agent Memory Architecture</title>
+  <style>
+    :root {
+      --paper: #f8f5ec;
+      --ink: #1f2328;
+      --muted: #716b61;
+      --grid: rgba(31, 35, 40, 0.055);
+      --orange: #d76838;
+      --orange-soft: #ffe0c6;
+      --yellow: #e8c547;
+      --yellow-soft: #fff1a8;
+      --green: #3f8f52;
+      --green-soft: #d8f0cf;
+      --blue: #3867d6;
+      --blue-soft: #dbe7ff;
+      --teal: #20898d;
+      --teal-soft: #d2f0ef;
+      --pink: #d35f84;
+      --pink-soft: #ffe0eb;
+      --panel: rgba(255, 252, 243, 0.76);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(var(--grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+        var(--paper);
+      background-size: 34px 34px;
+      color: var(--ink);
+      font-family: "Chalkboard SE", "Comic Sans MS", "Marker Felt", "PingFang SC", sans-serif;
+    }
+
+    .page {
+      width: 1500px;
+      height: 900px;
+      margin: 0 auto;
+      padding: 42px 52px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .kicker {
+      color: var(--orange);
+      font-family: "Avenir Next", "PingFang SC", sans-serif;
+      font-size: 14px;
+      font-weight: 900;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 8px 0 0;
+      font-size: 54px;
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 14px 0 0;
+      width: 900px;
+      color: var(--muted);
+      font-family: "Avenir Next", "PingFang SC", sans-serif;
+      font-size: 20px;
+      line-height: 1.5;
+      font-weight: 650;
+    }
+
+    .stamp {
+      position: absolute;
+      top: 48px;
+      right: 58px;
+      width: 260px;
+      padding: 14px 18px;
+      border: 3px solid var(--ink);
+      border-radius: 22px 17px 24px 18px;
+      background: rgba(255, 252, 243, 0.86);
+      transform: rotate(2deg);
+      box-shadow: 7px 8px 0 rgba(31, 35, 40, 0.11);
+    }
+
+    .stamp strong {
+      display: block;
+      font-size: 20px;
+      margin-bottom: 6px;
+    }
+
+    .stamp span {
+      display: block;
+      color: var(--muted);
+      font-family: "Avenir Next", "PingFang SC", sans-serif;
+      font-size: 14px;
+      line-height: 1.35;
+      font-weight: 650;
+    }
+
+    .board {
+      position: relative;
+      height: 650px;
+      margin-top: 34px;
+    }
+
+    .lane {
+      position: absolute;
+      left: 0;
+      right: 0;
+      border: 2px dashed rgba(31, 35, 40, 0.26);
+      border-radius: 28px;
+      background: rgba(255, 255, 255, 0.32);
+    }
+
+    .lane.capture { top: 0; height: 195px; }
+    .lane.distill { top: 252px; height: 195px; }
+    .lane.apply { bottom: 0; height: 172px; }
+
+    .lane-label {
+      position: absolute;
+      left: 22px;
+      top: -16px;
+      z-index: 6;
+      padding: 5px 12px;
+      border: 2.5px solid var(--ink);
+      border-radius: 12px 16px 11px 15px;
+      background: var(--paper);
+      font-size: 18px;
+      font-weight: 900;
+    }
+
+    .node {
+      position: absolute;
+      width: 198px;
+      min-height: 98px;
+      padding: 16px 17px;
+      border: 3px solid var(--stroke);
+      border-radius: 19px 16px 21px 17px;
+      background: var(--fill);
+      box-shadow: 8px 9px 0 rgba(31, 35, 40, 0.11);
+      transform: rotate(var(--tilt));
+      z-index: 3;
+    }
+
+    .node h2 {
+      margin: 0;
+      font-size: 23px;
+      line-height: 1.02;
+    }
+
+    .node p {
+      margin: 9px 0 0;
+      color: #3d3b36;
+      font-family: "Avenir Next", "PingFang SC", sans-serif;
+      font-size: 14px;
+      line-height: 1.35;
+      font-weight: 650;
+    }
+
+    .path {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 4px 7px;
+      border: 1.8px solid rgba(31, 35, 40, 0.32);
+      border-radius: 9px;
+      background: rgba(255, 255, 255, 0.45);
+      font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .orange { --stroke: var(--orange); --fill: var(--orange-soft); }
+    .yellow { --stroke: var(--yellow); --fill: var(--yellow-soft); }
+    .green { --stroke: var(--green); --fill: var(--green-soft); }
+    .blue { --stroke: var(--blue); --fill: var(--blue-soft); }
+    .teal { --stroke: var(--teal); --fill: var(--teal-soft); }
+    .pink { --stroke: var(--pink); --fill: var(--pink-soft); }
+
+    .n1 { left: 58px; top: 48px; --tilt: -1.2deg; }
+    .n2 { left: 318px; top: 48px; --tilt: 1deg; }
+    .n3 { left: 578px; top: 48px; --tilt: -0.7deg; }
+    .n4 { left: 220px; top: 272px; --tilt: 1.2deg; }
+    .n5 { left: 530px; top: 292px; --tilt: -1deg; }
+    .n6 { left: 46px; bottom: 24px; --tilt: 1deg; }
+    .n7 { left: 330px; bottom: 0; --tilt: -1deg; }
+    .n8 { left: 625px; bottom: 22px; --tilt: 0.8deg; }
+
+    .store {
+      position: absolute;
+      right: 34px;
+      top: 42px;
+      width: 440px;
+      height: 395px;
+      padding: 22px 24px;
+      border: 4px solid var(--ink);
+      border-radius: 30px 24px 34px 26px;
+      background: rgba(255, 252, 243, 0.88);
+      box-shadow: 12px 13px 0 rgba(31, 35, 40, 0.11);
+      z-index: 2;
+    }
+
+    .store h2 {
+      margin: 0 0 18px;
+      text-align: center;
+      font-size: 31px;
+      line-height: 1;
+    }
+
+    .shelf {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      align-items: center;
+      gap: 14px;
+      min-height: 62px;
+      margin-bottom: 14px;
+      padding: 12px 14px;
+      border: 2.5px solid var(--stroke);
+      border-radius: 16px 20px 15px 18px;
+      background: var(--fill);
+    }
+
+    .shelf b {
+      font-size: 19px;
+      line-height: 1.05;
+    }
+
+    .shelf span {
+      color: #48443d;
+      font-family: "Avenir Next", "PingFang SC", sans-serif;
+      font-size: 13px;
+      line-height: 1.35;
+      font-weight: 650;
+    }
+
+    .automation {
+      position: absolute;
+      right: 44px;
+      bottom: 30px;
+      width: 430px;
+      padding: 16px 20px;
+      border: 3px solid var(--blue);
+      border-radius: 24px 18px 26px 20px;
+      background: rgba(219, 231, 255, 0.9);
+      box-shadow: 9px 10px 0 rgba(31, 35, 40, 0.1);
+      z-index: 4;
+    }
+
+    .automation h2 {
+      margin: 0 0 8px;
+      font-size: 23px;
+      line-height: 1;
+      color: var(--blue);
+    }
+
+    .automation p {
+      margin: 0;
+      color: #403e39;
+      font-family: "Avenir Next", "PingFang SC", sans-serif;
+      font-size: 14px;
+      line-height: 1.38;
+      font-weight: 650;
+    }
+
+    svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .arrow {
+      fill: none;
+      stroke: var(--ink);
+      stroke-width: 3.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      marker-end: url(#arrow);
+    }
+
+    .arrow.orange { stroke: var(--orange); }
+    .arrow.green { stroke: var(--green); }
+    .arrow.blue { stroke: var(--blue); }
+    .arrow.loop {
+      stroke: var(--pink);
+      stroke-width: 4;
+      stroke-dasharray: 10 8;
+    }
+
+    .callout {
+      position: absolute;
+      left: 760px;
+      top: 298px;
+      width: 155px;
+      padding: 12px 13px;
+      border: 2.5px solid var(--pink);
+      border-radius: 16px 20px 15px 19px;
+      background: var(--pink-soft);
+      transform: rotate(-1.5deg);
+      font-family: "Avenir Next", "PingFang SC", sans-serif;
+      color: #403a3d;
+      font-size: 13px;
+      line-height: 1.32;
+      font-weight: 700;
+      z-index: 5;
+    }
+
+    .callout b {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--pink);
+      font-family: "Chalkboard SE", "Comic Sans MS", "PingFang SC", sans-serif;
+      font-size: 17px;
+    }
+    .watermark {
+      position: absolute;
+      right: 56px;
+      bottom: 12px;
+      z-index: 20;
+      color: rgba(31, 35, 40, 0.28);
+      font-family: "Avenir Next", "PingFang SC", sans-serif;
+      font-size: 19px;
+      font-weight: 900;
+      letter-spacing: 0.05em;
+      transform: rotate(-2deg);
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="kicker">本地优先 Agent Memory</div>
+    <h1>LLM Wiki Agent Memory</h1>
+    <p class="subtitle">这不是备份聊天记录，而是把本机 agent 会话编译成一个会累积、会复盘、能在下一次任务里按需加载的 LLM Wiki。</p>
+    <aside class="stamp">
+      <strong>区别于通用 LLM Wiki</strong>
+      <span>输入不是文章或网页，而是 Codex / Claude Code 的日常协作会话；输出不只是知识库，还包括能改变 agent 行为的 guardrails。</span>
+    </aside>
+
+    <section class="board" aria-label="LLM Wiki Agent Memory Architecture">
+      <div class="lane capture"><div class="lane-label">01 捕获</div></div>
+      <div class="lane distill"><div class="lane-label">02 提炼</div></div>
+      <div class="lane apply"><div class="lane-label">03 应用</div></div>
+
+      <svg viewBox="0 0 1396 650" aria-hidden="true">
+        <defs>
+          <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+            <path d="M 1 1 L 11 6 L 1 11" fill="none" stroke="#1f2328" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path>
+          </marker>
+        </defs>
+        <path class="arrow orange" d="M 258 96 C 282 88, 292 88, 318 98"></path>
+        <path class="arrow orange" d="M 518 96 C 542 88, 552 88, 578 98"></path>
+        <path class="arrow green" d="M 718 150 C 668 214, 564 258, 456 304"></path>
+        <path class="arrow green" d="M 420 348 C 464 336, 486 324, 530 326"></path>
+        <path class="arrow green" d="M 728 318 C 805 266, 866 214, 962 166"></path>
+        <path class="arrow blue" d="M 944 424 C 870 472, 772 516, 790 560"></path>
+        <path class="arrow blue" d="M 246 588 C 286 576, 306 574, 330 576"></path>
+        <path class="arrow blue" d="M 528 574 C 560 562, 590 562, 625 578"></path>
+        <path class="arrow loop" d="M 812 612 C 532 692, 116 638, 126 184"></path>
+      </svg>
+
+      <article class="node n1 orange">
+        <h2>会话日志</h2>
+        <p>Codex / Claude Code 的本机会话日志。</p>
+        <span class="path">~/.codex/sessions</span>
+      </article>
+
+      <article class="node n2 yellow">
+        <h2>证据收件箱</h2>
+        <p>机器摘证据，隔离噪声；可重生成，不进 git。</p>
+        <span class="path">.vault-meta/captures</span>
+      </article>
+
+      <article class="node n3 green">
+        <h2>每日 Wiki</h2>
+        <p>适配 wiki-ingest，把会话证据写成一天一页。</p>
+        <span class="path">ai-session-wiki-ingest</span>
+      </article>
+
+      <article class="node n4 teal">
+        <h2>记忆校准</h2>
+        <p>适配 wiki-lint，校准、合并并晋升旧知识。</p>
+        <span class="path">agent-memory-reconcile</span>
+      </article>
+
+      <article class="node n5 green">
+        <h2>经验晋升</h2>
+        <p>稳定、可验证、会改变未来行为的经验才晋升。</p>
+        <span class="path">concepts / index.md</span>
+      </article>
+
+      <article class="node n6 blue">
+        <h2>用户任务</h2>
+        <p>历史需求、debug、重复失败、feature 背景。</p>
+      </article>
+
+      <article class="node n7 blue">
+        <h2>记忆加载器</h2>
+        <p>适配 wiki-query，业务 repo 按需只读查询。</p>
+        <span class="path">engineering-memory-loader</span>
+      </article>
+
+      <article class="node n8 pink">
+        <h2>下一次更聪明</h2>
+        <p>带着历史背景和 guardrails 进入下一次任务。</p>
+      </article>
+
+      <aside class="store">
+        <h2>Wiki 记忆库</h2>
+        <div class="shelf green">
+          <b>每日来源</b>
+          <span>每天一页，记录当天真正有价值的 AI 协作。</span>
+        </div>
+        <div class="shelf teal">
+          <b>概念页</b>
+          <span>解释模式、背景、证据和下一次做法。</span>
+        </div>
+        <div class="shelf blue">
+          <b>目录索引</b>
+          <span>index.md / hot.md 帮 agent 找到相关页面。</span>
+        </div>
+        <div class="shelf pink">
+          <b>防踩坑规则</b>
+          <span>少量稳定规则，让 agent 避免重复踩坑。</span>
+        </div>
+      </aside>
+
+      <aside class="callout">
+        <b>自进化发生在这里</b>
+        Daily 编译当天证据，Weekly 负责 lint / merge / promote；Apply 再把稳定经验带回未来任务。
+      </aside>
+
+      <aside class="automation">
+        <h2>自动化边界</h2>
+        <p>只保留一个调度入口定时触发 daily / weekly loop；所有 runner 遵守单写者原则，避免双写。</p>
+      </aside>
+    </section>
+    <div class="watermark">@miniLV</div>
+  </main>
+</body>
+</html>

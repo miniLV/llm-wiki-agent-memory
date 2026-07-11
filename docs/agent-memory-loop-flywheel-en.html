@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LLM Wiki Agent Memory Flywheel</title>
+  <style>
+    :root {
+      --paper: #f8f5ec;
+      --ink: #1f2328;
+      --muted: #716b61;
+      --grid: rgba(31, 35, 40, 0.055);
+      --orange: #d76838;
+      --orange-soft: #ffe0c6;
+      --yellow: #e8c547;
+      --yellow-soft: #fff1a8;
+      --green: #3f8f52;
+      --green-soft: #d8f0cf;
+      --blue: #3867d6;
+      --blue-soft: #dbe7ff;
+      --teal: #20898d;
+      --teal-soft: #d2f0ef;
+      --pink: #d35f84;
+      --pink-soft: #ffe0eb;
+      --panel: rgba(255, 252, 243, 0.84);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(var(--grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+        var(--paper);
+      background-size: 34px 34px;
+      color: var(--ink);
+      font-family: "Chalkboard SE", "Comic Sans MS", "Marker Felt", "PingFang SC", sans-serif;
+    }
+
+    .page {
+      width: 1500px;
+      height: 900px;
+      margin: 0 auto;
+      padding: 42px 52px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .kicker {
+      color: var(--orange);
+      font-family: "Avenir Next", "PingFang SC", sans-serif;
+      font-size: 14px;
+      font-weight: 900;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 8px 0 0;
+      font-size: 54px;
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 14px 0 0;
+      width: 920px;
+      color: var(--muted);
+      font-family: "Avenir Next", "PingFang SC", sans-serif;
+      font-size: 20px;
+      line-height: 1.5;
+      font-weight: 650;
+    }
+
+    .stamp {
+      position: absolute;
+      top: 48px;
+      right: 58px;
+      width: 300px;
+      padding: 14px 18px;
+      border: 3px solid var(--ink);
+      border-radius: 22px 17px 24px 18px;
+      background: rgba(255, 252, 243, 0.86);
+      transform: rotate(2deg);
+      box-shadow: 7px 8px 0 rgba(31, 35, 40, 0.11);
+    }
+
+    .stamp strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 20px;
+    }
+
+    .stamp span {
+      display: block;
+      color: var(--muted);
+      font-family: "Avenir Next", "PingFang SC", sans-serif;
+      font-size: 14px;
+      line-height: 1.35;
+      font-weight: 650;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 270px 1fr 270px;
+      gap: 28px;
+      margin-top: 34px;
+      align-items: center;
+    }
+
+    .note-stack {
+      display: grid;
+      gap: 22px;
+    }
+
+    .note {
+      min-height: 126px;
+      padding: 18px 20px;
+      border: 3px solid var(--stroke);
+      border-radius: 22px 17px 24px 18px;
+      background: var(--fill);
+      box-shadow: 8px 9px 0 rgba(31, 35, 40, 0.11);
+      transform: rotate(var(--tilt));
+    }
+
+    .note h2 {
+      margin: 0 0 9px;
+      font-size: 24px;
+      line-height: 1.03;
+      color: color-mix(in srgb, var(--stroke) 70%, var(--ink));
+    }
+
+    .note p {
+      margin: 0;
+      color: #403d37;
+      font-family: "Avenir Next", "PingFang SC", sans-serif;
+      font-size: 15px;
+      line-height: 1.42;
+      font-weight: 650;
+    }
+
+    .orange { --stroke: var(--orange); --fill: var(--orange-soft); }
+    .yellow { --stroke: var(--yellow); --fill: var(--yellow-soft); }
+    .green { --stroke: var(--green); --fill: var(--green-soft); }
+    .teal { --stroke: var(--teal); --fill: var(--teal-soft); }
+    .blue { --stroke: var(--blue); --fill: var(--blue-soft); }
+    .pink { --stroke: var(--pink); --fill: var(--pink-soft); }
+
+    .flywheel {
+      position: relative;
+      height: 650px;
+    }
+
+    .wheel-svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .loop-track {
+      fill: none;
+      stroke-width: 42;
+      stroke-linecap: round;
+      opacity: 0.92;
+    }
+
+    .loop-arrow {
+      fill: none;
+      stroke: var(--ink);
+      stroke-width: 3.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      marker-end: url(#arrow);
+    }
+
+    .center {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 330px;
+      height: 330px;
+      transform: translate(-50%, -50%) rotate(-1deg);
+      border: 4px solid var(--ink);
+      border-radius: 50%;
+      background: rgba(255, 252, 243, 0.92);
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 42px;
+      box-shadow: 12px 13px 0 rgba(31, 35, 40, 0.11);
+      z-index: 2;
+    }
+
+    .center .eyebrow {
+      color: var(--orange);
+      font-family: "Avenir Next", "PingFang SC", sans-serif;
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .center h2 {
+      margin: 12px 0 0;
+      font-size: 45px;
+      line-height: 0.96;
+    }
+
+    .center p {
+      margin: 16px auto 0;
+      color: var(--muted);
+      font-family: "Avenir Next", "PingFang SC", sans-serif;
+      font-size: 16px;
+      line-height: 1.4;
+      font-weight: 650;
+    }
+
+    .step {
+      position: absolute;
+      width: 185px;
+      min-height: 90px;
+      padding: 13px 15px;
+      border: 3px solid var(--stroke);
+      border-radius: 18px 15px 20px 16px;
+      background: var(--fill);
+      box-shadow: 7px 8px 0 rgba(31, 35, 40, 0.11);
+      transform: rotate(var(--tilt));
+      z-index: 3;
+    }
+
+    .step b {
+      display: block;
+      margin-bottom: 5px;
+      color: color-mix(in srgb, var(--stroke) 75%, var(--ink));
+      font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+      font-size: 14px;
+      font-weight: 900;
+      letter-spacing: 0.06em;
+    }
+
+    .step span {
+      display: block;
+      font-size: 22px;
+      line-height: 1.02;
+      font-weight: 900;
+    }
+
+    .step small {
+      display: block;
+      margin-top: 6px;
+      color: #4b4740;
+      font-family: "Avenir Next", "PingFang SC", sans-serif;
+      font-size: 12px;
+      line-height: 1.3;
+      font-weight: 700;
+    }
+
+    .s1 { left: 92px; top: 44px; --tilt: -1.5deg; }
+    .s2 { right: 92px; top: 44px; --tilt: 1deg; }
+    .s3 { right: 4px; top: 280px; --tilt: -0.8deg; }
+    .s4 { right: 92px; bottom: 44px; --tilt: 1.3deg; }
+    .s5 { left: 92px; bottom: 44px; --tilt: -1deg; }
+    .s6 { left: 4px; top: 280px; --tilt: 1deg; }
+
+    .watermark {
+      position: absolute;
+      right: 56px;
+      bottom: 12px;
+      z-index: 20;
+      color: rgba(31, 35, 40, 0.28);
+      font-family: "Avenir Next", "PingFang SC", sans-serif;
+      font-size: 19px;
+      font-weight: 900;
+      letter-spacing: 0.05em;
+      transform: rotate(-2deg);
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="kicker">local-first agent memory</div>
+    <h1>LLM Wiki Agent Memory Flywheel</h1>
+    <p class="subtitle">Local workflows connect deterministic capture, Daily, Reconcile, and a thin query adapter into a lightweight memory loop.</p>
+
+    <aside class="stamp">
+      <strong>The flywheel is not a scheduled backup</strong>
+      <span>Daily and Weekly are schedules; local workflows write memory, while a thin loader reuses upstream wiki-query to read it.</span>
+    </aside>
+
+    <section class="layout">
+      <div class="note-stack">
+        <article class="note orange" style="--tilt:-1deg;">
+          <h2>Deterministic Capture</h2>
+          <p><b>capture-ai-chats</b> extracts only the selected date into a rebuildable evidence inbox.</p>
+        </article>
+        <article class="note teal" style="--tilt:1.2deg;">
+          <h2>Daily + Reconcile</h2>
+          <p><b>ai-session-wiki-ingest</b> writes one Daily page; <b>agent-memory-reconcile</b> promotes only stable lessons.</p>
+        </article>
+      </div>
+
+      <div class="flywheel" aria-label="LLM Wiki Agent Memory Flywheel">
+        <svg class="wheel-svg" viewBox="0 0 650 650" aria-hidden="true">
+          <defs>
+            <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+              <path d="M 1 1 L 11 6 L 1 11" fill="none" stroke="#1f2328" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path>
+            </marker>
+          </defs>
+          <path class="loop-track" d="M 224.1 98.4 A 248 248 0 0 1 425.9 98.4" stroke="#d76838"></path>
+          <path class="loop-track" d="M 470.8 124.4 A 248 248 0 0 1 571.6 299.1" stroke="#e8c547"></path>
+          <path class="loop-track" d="M 571.6 350.9 A 248 248 0 0 1 470.8 525.6" stroke="#3f8f52"></path>
+          <path class="loop-track" d="M 425.9 551.6 A 248 248 0 0 1 224.1 551.6" stroke="#20898d"></path>
+          <path class="loop-track" d="M 179.2 525.6 A 248 248 0 0 1 78.4 350.9" stroke="#3867d6"></path>
+          <path class="loop-track" d="M 78.4 299.1 A 248 248 0 0 1 179.2 124.4" stroke="#d35f84"></path>
+
+          <path class="loop-arrow" d="M 242.6 85.8 A 253 253 0 0 1 407.4 85.8"></path>
+          <path class="loop-arrow" d="M 491.0 134.1 A 253 253 0 0 1 573.4 276.7"></path>
+          <path class="loop-arrow" d="M 573.4 373.3 A 253 253 0 0 1 491.0 515.9"></path>
+          <path class="loop-arrow" d="M 407.4 564.2 A 253 253 0 0 1 242.6 564.2"></path>
+          <path class="loop-arrow" d="M 159.0 515.9 A 253 253 0 0 1 76.6 373.3"></path>
+          <path class="loop-arrow" d="M 76.6 276.7 A 253 253 0 0 1 159.0 134.1"></path>
+        </svg>
+
+        <div class="center">
+          <div>
+            <div class="eyebrow">compound memory</div>
+            <h2>LLM<br>Wiki</h2>
+            <p>Turns collaboration records into a searchable, reusable knowledge layer that returns to future tasks.</p>
+          </div>
+        </div>
+
+        <article class="step s1 orange">
+          <b>01</b><span>Session Stores</span>
+          <small>local session logs</small>
+        </article>
+        <article class="step s2 yellow">
+          <b>02</b><span>Evidence Inbox</span>
+          <small>deterministic capture</small>
+        </article>
+        <article class="step s3 green">
+          <b>03</b><span>Daily Wiki</span>
+          <small>one date, one page</small>
+        </article>
+        <article class="step s4 teal">
+          <b>04</b><span>Periodic Reconcile</span>
+          <small>lint + reconcile</small>
+        </article>
+        <article class="step s5 blue">
+          <b>05</b><span>Reusable Knowledge</span>
+          <small>concepts + ≤10 rules</small>
+        </article>
+        <article class="step s6 pink">
+          <b>06</b><span>Read On Demand</span>
+          <small>thin wiki-query adapter</small>
+        </article>
+      </div>
+
+      <div class="note-stack">
+        <article class="note blue" style="--tilt:1deg;">
+          <h2>Thin Query Adapter</h2>
+          <p><b>engineering-memory-loader</b> resolves the Vault and adds engineering routes; upstream <b>wiki-query</b> handles retrieval and synthesis.</p>
+        </article>
+        <article class="note pink" style="--tilt:-1.2deg;">
+          <h2>Better Next Task</h2>
+          <p>New tasks run with historical context and a few Behavior Rules, then produce sessions for the next cycle.</p>
+        </article>
+      </div>
+    </section>
+
+    <div class="watermark">@miniLV</div>
+  </main>
+</body>
+</html>
