@@ -1,0 +1,12 @@
+.DS_Store
+node_modules/
+.env
+.env.*
+*.log
+
+# optional local/session data
+.vault-meta/
+.agent/external/
+
+# generated local code graph
+graphify-out/

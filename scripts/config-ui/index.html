@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Memory Control</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+</head>
+<body class="setup-mode" data-page="setup">
+  <div class="app-frame">
+    <aside class="app-sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-logo">
+          <span class="sidebar-dot"></span>
+          <span class="sidebar-title">Memory</span>
+          <span class="sidebar-version" id="appVersion">v0.0.1</span>
+        </div>
+        <div class="sidebar-subtitle" data-i18n="sidebar.subtitle">agent wiki loop</div>
+      </div>
+
+      <nav class="nav-group" aria-label="Workspace">
+        <div class="nav-label" data-i18n="nav.workspace">Workspace</div>
+        <div class="nav-item active" id="navSetup" data-page-target="setup"><span class="nav-icon">◇</span><span data-i18n="nav.setup">Setup</span></div>
+        <div class="nav-item" id="navRun" data-page-target="config"><span class="nav-icon">↻</span><span data-i18n="nav.config">Config & Run</span></div>
+      </nav>
+
+      <nav class="nav-group" aria-label="Configuration">
+        <div class="nav-label" data-i18n="nav.configuration">Configuration</div>
+        <div class="nav-item" id="navAutomation" data-page-target="automation"><span class="nav-icon">⏱</span><span data-i18n="nav.automation">Automation</span></div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="status-pill"><span class="pulse-dot"></span><span data-i18n="sidebar.localOnly">Local only</span></div>
+        <div class="sidebar-subtitle powered-by">
+          <span data-i18n="sidebar.poweredBy">Powered by</span>
+          <a class="powered-link" href="https://github.com/miniLV/llm-wiki-agent-memory" target="_blank" rel="noreferrer">miniLV</a>
+        </div>
+      </div>
+    </aside>
+
+    <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="mark">*</div>
+        <div class="brand-copy">
+          <div class="eyebrow" data-i18n="hero.eyebrow">本地优先 Agent Memory</div>
+          <h1>LLM Wiki Agent Memory</h1>
+          <div class="sub" data-i18n="hero.sub">把 Codex / Claude Code 的本机会话整理成可查询的本地 wiki，并在需要时带回 agent。</div>
+          <div class="repo-line" id="repoRoot" role="button" tabindex="0" title="打开本地 vault" data-i18n-title="hero.repoTitle"></div>
+        </div>
+      </div>
+      <div class="toolbar">
+        <label class="language-picker">
+          <span data-i18n="language.label">语言</span>
+          <select id="languageSelect" aria-label="语言">
+            <option value="zh">中文</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+        <button class="ghost" id="refreshBtn" data-i18n="button.refresh">刷新</button>
+        <button class="primary" id="openVaultBtn" type="button" data-i18n="button.openVault">打开 Vault</button>
+      </div>
+    </header>
+
+    <section class="screen page page-setup" id="onboardingScreen">
+      <div class="setup-hero">
+        <div class="setup-copy">
+          <div class="eyebrow" data-i18n="setup.eyebrow">第一步 · 环境检查</div>
+          <h2 data-i18n="setup.title">完成首次设置</h2>
+          <p data-i18n="setup.p1">先确认这台机器能采集会话、写入 wiki，并能定时执行 daily / weekly memory loop。缺什么，这里只显示下一步动作。</p>
+          <p data-i18n="setup.p2">设置完成后再进入 Config & Run 调整数据源、输出路径和定时任务。</p>
+        </div>
+        <div class="setup-card">
+          <div class="setup-score">
+            <span data-i18n="setup.progress">当前进度</span>
+            <b id="onboardingScore">-</b>
+          </div>
+          <div class="setup-chain" id="setupChain" aria-label="Setup progress"></div>
+          <div class="next-action" id="nextActionCard">
+            <b id="nextActionTitle">正在检查本地环境...</b>
+            <span id="nextActionBody">正在确认下一步需要做什么。</span>
+          </div>
+          <div class="wizard-actions">
+            <button class="primary" id="wizardPrimary" data-run="setup">开始设置</button>
+            <button class="ghost" id="wizardRefresh" type="button" data-i18n="button.refresh">刷新</button>
+          </div>
+          <div class="setup-note" data-i18n="setup.note">建议先用默认配置跑通 demo。路径、source、skills 映射和产物位置在 Config & Run 页统一处理。</div>
+        </div>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2 data-i18n="setup.checks">环境检查</h2>
+          <span class="caption" id="gateMetric">checking</span>
+        </div>
+        <div class="panel-pad">
+          <div class="compact-steps" id="wizardSteps"></div>
+        </div>
+      </section>
+    </section>
+
+    <div class="status-strip page page-config">
+        <div class="metric"><span data-i18n="metric.memoryLoop">Memory Loop</span><b id="runnerMetric">-</b></div>
+      <div class="metric"><span data-i18n="metric.setup">Setup</span><b id="readyScoreMetric">-</b></div>
+      <div class="metric"><span data-i18n="metric.dailyWiki">Daily Wiki</span><b id="summaryMetric">-</b></div>
+      <div class="metric"><span data-i18n="metric.concepts">Concepts</span><b id="conceptMetric">-</b></div>
+    </div>
+
+    <div class="workspace">
+      <aside class="side-panel">
+        <input type="hidden" id="agentRunner" value="codex" />
+        <input type="checkbox" id="codexSourcesEnabled" hidden />
+        <input type="checkbox" id="claudeSourcesEnabled" hidden />
+
+        <section class="panel config-only">
+          <div class="panel-head">
+            <h2 data-i18n="flow.title">Wiki 结构和流程</h2>
+            <span class="caption" id="layerMetric">minimal loop</span>
+          </div>
+          <div class="panel-pad">
+            <ul class="layer-list">
+              <li>
+                <b data-i18n="flow.sourceTitle">01 Source Logs</b>
+                <span><code>Codex / Claude session logs</code><span data-i18n="flow.sourceBody">原始会话日志留在本机原位置，daily loop 先生成本地 capture inbox，再写 Daily Wiki。</span></span>
+                <button class="ghost open-evidence" data-client-action="open-source-picker" type="button" data-i18n="button.sources">Sources</button>
+              </li>
+              <li>
+                <b data-i18n="flow.dailyTitle">02 Daily Wiki</b>
+                <span><code>wiki/sources/ai-chats</code><span data-i18n="flow.dailyBody">给人和 agent 看的每日中文 wiki，保留关键上下文和 source link。</span></span>
+                <button class="ghost" data-run="open-summaries" type="button" data-i18n="button.open">打开</button>
+              </li>
+              <li>
+                <b data-i18n="flow.conceptsTitle">03 Concepts & Rules</b>
+                <span><code>wiki/concepts</code><span data-i18n="flow.conceptsBody">Daily 只做 backup；weekly 二次 review 后，只有真正有价值的经验才进入 concepts，不生成 behavior rules。</span></span>
+                <button class="ghost" data-run="open-guardrails" type="button" data-i18n="button.open">打开</button>
+              </li>
+              <li>
+                <b data-i18n="flow.skillTitle">04 Apply Skill</b>
+                <span><code>.agent/skills/engineering-memory-loader</code><span data-i18n="flow.skillBody">业务 repo 按需加载查询 skill，找历史背景和防踩坑规则。</span></span>
+                <button class="ghost" data-run="open-local-skills" type="button" data-i18n="button.open">打开</button>
+              </li>
+            </ul>
+          </div>
+        </section>
+      </aside>
+
+      <section class="main-panel">
+        <section class="panel config-only">
+          <div class="panel-head">
+            <h2 data-i18n="recent.title">最近一周</h2>
+            <span class="caption" id="runState">idle</span>
+          </div>
+          <div class="panel-pad">
+            <article class="run-card">
+              <div>
+                <h3 data-i18n="recent.cardTitle">整理最近一周</h3>
+                <p data-i18n="recent.cardBody">复制一段提示词并打开 Codex。粘贴后，Codex 会按最近 7 天逐日调用 daily workflow，再运行 weekly lint / merge / promote。</p>
+              </div>
+              <div class="run-actions">
+                <button class="primary" data-run="prepare-codex-recent-week" data-i18n="button.copyPromptOpenCodex">复制提示词并打开 Codex</button>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel automation-only">
+          <div class="panel-head">
+            <h2 data-i18n="automation.title">自动化</h2>
+            <span class="caption" id="automationMetric">Codex App</span>
+          </div>
+          <div class="panel-pad">
+            <div class="notice compact" data-i18n="automation.notice">调度由 Codex App Automations 负责。这里检查当前 repo 的 daily / weekly Memory Loop 是否启用；修改时间请直接在 Codex App Automations 里改。</div>
+            <div class="automation-grid">
+              <div class="auto-card">
+                <h3 data-i18n="automation.statusTitle">Memory Loop 状态</h3>
+                <div class="auto-line"><b>daily</b><span id="dailyCodexMetric">-</span></div>
+                <div class="auto-line"><b>weekly</b><span id="weeklyCodexMetric">-</span></div>
+              </div>
+            </div>
+            <div class="actions" style="margin-top:12px">
+              <button class="primary" data-run="prepare-codex-automation" data-i18n="button.copyPromptOpenCodex">复制提示词并打开 Codex</button>
+            </div>
+          </div>
+        </section>
+
+        <div class="summary-grid config-only">
+          <section class="panel">
+            <div class="panel-head">
+              <h2 data-i18n="summary.title">每日总结</h2>
+              <span class="caption" data-i18n="summary.latest14">最近 14 条</span>
+            </div>
+            <div class="panel-pad">
+              <ul class="summary-list" id="summaries"></ul>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2 data-i18n="log.title">日志</h2>
+              <div class="log-actions">
+                <button class="ghost" id="copyLogBtn" type="button" title="复制所有日志用于调试" data-i18n="button.copyLog" data-i18n-title="button.copyLogTitle">复制日志</button>
+                <span class="caption" id="logState">ready</span>
+              </div>
+            </div>
+            <div class="panel-pad">
+              <pre id="log"></pre>
+            </div>
+          </section>
+        </div>
+      </section>
+    </div>
+    </main>
+  </div>
+
+  <input type="checkbox" id="memorySkillCodexEnabled" hidden />
+  <input type="checkbox" id="memorySkillClaudeEnabled" hidden />
+  <input id="dailyDate" type="date" hidden />
+  <input id="weeklyEndDate" type="date" hidden />
+
+  <div class="modal" id="setupModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="setupModalTitle">
+      <div class="modal-head">
+        <div>
+          <h2 id="setupModalTitle">Setup action</h2>
+          <p id="setupModalBody">Choose how to complete this setup step.</p>
+        </div>
+        <button class="ghost modal-close" id="setupModalClose" type="button">×</button>
+      </div>
+      <div class="choice-grid">
+        <article class="choice-card">
+          <div>
+            <b id="manualChoiceTitle">Manual</b>
+            <p id="manualChoiceBody">Open the official page and finish the step yourself.</p>
+          </div>
+          <button class="secondary" id="manualChoiceBtn" type="button">Open link</button>
+        </article>
+        <article class="choice-card">
+          <div>
+            <b id="autoChoiceTitle">One-click</b>
+            <p id="autoChoiceBody">Let this repo run the local setup script for you.</p>
+          </div>
+          <button class="primary" id="autoChoiceBtn" type="button">Run setup</button>
+        </article>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="sourceModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="sourceModalTitle">
+      <div class="modal-head">
+        <div>
+          <h2 id="sourceModalTitle" data-i18n="source.title">选择数据源</h2>
+          <p data-i18n="source.body">确认这些数据源后，Daily Wiki 才会从对应会话来源开始整理。</p>
+        </div>
+        <button class="ghost modal-close" id="sourceModalClose" type="button">×</button>
+      </div>
+      <div class="source-choice-list">
+        <label class="source-choice">
+          <input type="checkbox" id="sourceModalCodex" />
+          <span>
+            <b>Codex session logs</b>
+            <span data-i18n="source.codexBody">读取 Codex 本机会话，生成 Daily Wiki，并供后续 memory reconcile 使用。</span>
+          </span>
+        </label>
+        <label class="source-choice">
+          <input type="checkbox" id="sourceModalClaude" />
+          <span>
+            <b>Claude Code session logs</b>
+            <span data-i18n="source.claudeBody">读取 Claude Code 本机会话，和 Codex 一起作为默认数据来源。</span>
+          </span>
+        </label>
+      </div>
+      <div class="source-modal-actions">
+        <div>
+          <button class="secondary" id="sourceModalCancelBtn" type="button" data-i18n="button.cancel">取消</button>
+          <button class="primary" id="sourceModalSaveBtn" type="button" data-i18n="button.confirmSources">确认数据源</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="codexLoopModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="codexLoopModalTitle">
+      <div class="modal-head">
+        <div>
+          <h2 id="codexLoopModalTitle" data-i18n="loop.title">安装 Memory Loop</h2>
+          <p data-i18n="loop.body">下一步会打开 Codex，并复制安装提示词：创建 daily / weekly 两个定时 loop，让知识库自动总结、复盘和沉淀。</p>
+        </div>
+        <button class="ghost modal-close" id="codexLoopModalClose" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-schedule">
+          <div class="schedule-row">
+            <label class="field"><span data-i18n="loop.dailyDetail">Daily 总结详细度</span>
+              <select id="dailySummaryDetail">
+                <option value="concise" data-i18n="loop.detailConcise">精简</option>
+                <option value="detailed" data-i18n="loop.detailDetailed">详细（默认，完整提取价值信息，通常约 1200 词起）</option>
+              </select>
+            </label>
+          </div>
+          <div class="schedule-row">
+            <label class="field"><span data-i18n="loop.dailyTime">Daily 时间</span>
+              <input id="dailyAutoTime" type="time" />
+            </label>
+          </div>
+          <div class="schedule-row weekly-row">
+            <label class="field"><span data-i18n="loop.weeklyDay">Weekly 日期</span>
+              <select id="weeklyAutoDay">
+                <option value="1" data-i18n="day.monday">周一</option>
+                <option value="2" data-i18n="day.tuesday">周二</option>
+                <option value="3" data-i18n="day.wednesday">周三</option>
+                <option value="4" data-i18n="day.thursday">周四</option>
+                <option value="5" data-i18n="day.friday">周五</option>
+                <option value="6" data-i18n="day.saturday">周六</option>
+                <option value="0" data-i18n="day.sunday">周日</option>
+              </select>
+            </label>
+            <label class="field"><span data-i18n="loop.weeklyTime">Weekly 时间</span>
+              <input id="weeklyAutoTime" type="time" />
+            </label>
+          </div>
+        </div>
+        <p class="modal-schedule-note" data-i18n="loop.note">这些时间只用于生成安装提示词；安装后如果在 Codex App Automations 里修改，以 Codex App 的真实设置为准。</p>
+        <ol>
+          <li data-i18n="loop.step1">点击“复制并打开”后，会自动复制安装提示词并打开 Codex App。</li>
+          <li data-i18n="loop.step2">在 Codex 里粘贴当前剪贴板内容并发送。</li>
+          <li data-i18n="loop.step3">Codex agent 会创建或更新两个定时任务：daily 总结当天对话，weekly 做 lint、合并旧知识并晋升稳定经验。</li>
+        </ol>
+      </div>
+      <div class="modal-actions">
+        <button class="secondary" id="codexLoopCancelBtn" type="button" data-i18n="button.cancel">取消</button>
+        <button class="primary" id="codexLoopConfirmBtn" type="button" data-i18n="button.copyOpen">复制并打开</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="applyWikiSkillModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="applyWikiSkillModalTitle">
+      <div class="modal-head">
+        <div>
+          <h2 id="applyWikiSkillModalTitle">Apply Wiki Skill</h2>
+          <p data-i18n="skill.body">把本 repo 的 engineering-memory-loader 软链接到 Codex，让其他 repo 可以查询这套本地 LLM wiki。</p>
+        </div>
+        <button class="ghost modal-close" id="applyWikiSkillModalClose" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="notice compact" data-i18n="skill.notice">这一步只应用查询 skill；daily / weekly memory loop 仍由 Codex App Automations 负责。</div>
+        <div class="source-choice-list compact-choice-list">
+          <label class="source-choice">
+            <input type="checkbox" id="applyWikiSkillCodex" />
+            <span>
+              <b>Codex</b>
+              <span><span data-i18n="skill.syncTo">同步到</span> <code>~/.codex/skills/engineering-memory-loader</code></span>
+            </span>
+          </label>
+          <input type="checkbox" id="applyWikiSkillClaude" hidden />
+        </div>
+        <ul class="path-list apply-skill-links" id="applyWikiSkillLinks"></ul>
+      </div>
+      <div class="modal-actions">
+        <button class="secondary" id="applyWikiSkillCancelBtn" type="button" data-i18n="button.close">关闭</button>
+        <button class="primary" id="applyWikiSkillRunBtn" type="button" data-i18n="button.applyRefresh">应用 / 刷新</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="progress-banner" id="progressBanner" role="status" aria-live="polite" hidden>
+    <div>
+      <b id="progressTitle">Installing...</b>
+      <span id="progressBody">Downloading and configuring local resources.</span>
+    </div>
+    <div class="progress-track"><span></span></div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>
