@@ -1,59 +1,68 @@
-# LLM Wiki Agent Memory
+<h1 align="center">LLM Wiki Agent Memory</h1>
 
-把 Codex / Claude Code 的本机会话编译成一个小型、可查询、可审计的本地
-Markdown Wiki。
+<p align="center">
+  <strong>Local-first LLM Wiki for Codex / Claude Code agent memory.</strong>
+</p>
 
-[English](README.en.md)
+<p align="center">
+  <strong>把 Codex / Claude Code 的本机会话整理成可查询的 Obsidian 风格本地 wiki，并在需要时带回 agent。</strong>
+</p>
 
-## 解决什么问题
+<p align="center">
+  <a href="https://github.com/miniLV/llm-wiki-agent-memory">GitHub</a> ·
+  <strong>简体中文</strong> · <a href="./README.en.md">English</a>
+</p>
 
-- Agent 忘记最近做过什么，重复调查同一问题。
-- 工程决定和 debug 证据散落在 session 里，无法按 ticket、repo、功能或时间找回。
-- `AGENTS.md` 不适合承载持续增长的个人历史。
-- 需要本地私有记忆，但不想先引入向量库或复杂 RAG。
+<p align="center">
+  <code>bash scripts/config-ui.sh --open</code>
+</p>
 
-## 核心链路
+## 这是什么
 
-```text
-Codex / Claude Code session logs
-  -> deterministic capture inbox
-  -> one Daily backup page per date
-  -> periodic lint + reconcile
-  -> reviewed reusable Concepts
-  -> read-only engineering-memory-loader
-```
+这是一个本地优先的 agent memory starter。它不把不断增长的记忆塞进 `AGENTS.md`，而是把 Codex / Claude Code 的本机会话整理成一个 Markdown wiki，再通过 `engineering-memory-loader` 让 Codex 在其他 repo 里按需查询历史背景、工程决策和防踩坑规则。
 
-三层各自只做一件事：
+适合你想解决这些问题：
 
-- Capture 保留可重建的 session evidence，不写结论。
-- Daily 把一天的会话编译成事实备份和未审查候选，不直接作为经验生效。
-- Reconcile 二次 review，只把有独立证据和行动价值的经验晋升为 concept。
+- agent 忘记最近做过什么。
+- debug 时需要查以前踩过的坑。
+- 项目决策散落在对话里，没有稳定入口。
+- 你想保留本地私有记忆，但不想上云或引入复杂 RAG。
 
-原始 session 始终留在本机原位置，是 source of truth。
+## 架构亮点
 
-![LLM Wiki Agent Memory 飞轮](docs/agent-memory-loop-flywheel.png)
+整体架构：本机会话先进入 evidence inbox，再编译成 Daily Wiki；Weekly Review 负责晋升稳定经验，最终通过 memory loader 回到下一次任务。
 
-## 简化后的设计边界
+![LLM Wiki Agent Memory 架构图](docs/agent-memory-arch-sketch.png)
 
-- `SCHEMA.md` 是唯一领域规则源；skills 只写步骤和边界，template 只写页面形状。
-- Daily frontmatter 只有一组最小字段，详见 [SCHEMA.md](SCHEMA.md)。ticket、feature、repo、tool 等都收敛到一个 `lookup_keys` 列表。
-- provenance 只有一个布尔值。只要页面包含 Vault 派生回答，就不会自动作为独立晋升证据。
-- 不维护 `hot.md`、多级 `_index.md`、Guardrail Trigger taxonomy 或自动 Canvas。
-- 图只在用户明确要求时生成；可检索文字始终是主记录。
-- 当前只采集 Codex 与 Claude Code session logs。通用文件夹导入不属于这个版本的核心。
+自进化飞轮：Daily 负责记录，Weekly 负责 lint / 合并 / 晋升，Apply 负责让经验回到未来任务。
 
-## 三个 workflow
+![LLM Wiki Agent Memory 飞轮图](docs/agent-memory-loop-flywheel.png)
 
-| Skill | 职责 | 可见范围 |
-|---|---|---|
-| `ai-session-wiki-ingest` | 采集指定日期并写一页 Daily Wiki | repo-local |
-| `agent-memory-reconcile` | 二次 review、合并和晋升 Concepts，不生成 Behavior Rules | repo-local |
-| `engineering-memory-loader` | 跨 repo 只读查询历史知识 | 全局暴露 |
+<sub>上面两张图使用 [miniLV/sketchboard-diagram](https://github.com/miniLV/sketchboard-diagram) 这个 agent skill 绘制；它可以快速生成同款手绘白板风 HTML 架构图并导出 PNG。</sub>
 
-Daily 和 Weekly 只是调度频率，不是新的记忆层。当前定时 writer 只支持 Codex App
-Automations；session source 仍同时支持 Codex 和 Claude Code。
+- Key-driven synthesis：Daily run 会保留 Jira / issue / work item id、feature、repo、tool 和 alias，让 `ABC-123`、`owner/repo#123`、`AI VBG`、`aivbg` 这类输入可以串起相关历史。
+- 有界但完整：Capture 为每个 session 保留按时间排序的关键对话高光，Daily Wiki 会记录关键尝试、备选方案、证据变化、结论和未解决事项，而不是把复杂会话压成一句话。
+- 自动汇总历史：当一个 key 命中多次历史会话时，agent 会过滤低相关项，再汇总时间线、关键决策、反复问题、当前状态和下一步。
+- 两级记忆：Daily Wiki 保留具体 evidence 和检索 key；Weekly Review 只把反复出现的主题沉淀成 concept / guardrail，并维护 `index.md` / `hot.md`。
+- 视觉证据：Daily capture 能从 session 中提取截图到本地 evidence inbox；图片按证据价值评分后才会进入 Wiki。关系复杂度达到门槛时自动生成或更新主题 Canvas，否则使用 Mermaid 或文字，文字总结始终是可检索的主记录。
+- 防膨胀：普通 ticket / project key 不默认晋升成长期记忆；只有稳定父级主题或长期 workstream 才沉淀成 concept。`Agent Behavior Rules` 最多 10 条。
+- 可审计：常规查询读 Daily Wiki / index；只有需要 exact command output 或争议证据时才回到原始 session link。
 
-## 快速开始
+## 本地配置界面
+
+运行本地配置页后，界面大概长这样。按页面上的检查项一步步补齐即可：
+
+![LLM Wiki Agent Memory 本地配置界面](docs/assets/local-config-ui.png)
+
+这个页面只绑定 `127.0.0.1`。第一次使用时，重点看左侧的 **设置**、**配置和运行**、**自动化** 三个入口：
+
+1. 在 **设置** 页检查 Obsidian、Obsidian Skills、Claude Obsidian、数据源、Codex Automations 和查询 skill。
+2. 缺什么就点页面里的安装、打开或刷新按钮。已有资源会直接复用。
+3. 在 **配置和运行** 页确认数据源，默认支持 Codex session logs 和 Claude Code session logs，也可以加自定义文件夹。
+4. 在 **自动化** 页复制 prompt 到 Codex App，创建或更新 daily / weekly memory loop。
+5. 页面显示 ready 后，就可以在其他 repo 里直接问 Codex 历史问题。
+
+## 5 分钟开始
 
 ```bash
 git clone https://github.com/miniLV/llm-wiki-agent-memory.git
@@ -61,75 +70,71 @@ cd llm-wiki-agent-memory
 bash scripts/config-ui.sh --open
 ```
 
-设置流程会：
-
-1. 一键安装推荐环境：Obsidian App、通用 Obsidian Skills 和 Claude Obsidian。
-2. 把 `engineering-memory-loader` 软链接到 Codex skills 目录。
-3. 确认 Codex / Claude Code session sources。
-4. 帮你在 Codex App 中创建 daily / weekly Automations。
-
-Obsidian App 和通用 Obsidian Skills 都是推荐但非必需的增强项。首次设置会一并
-安装，减少新手需要理解和手动选择的步骤，但它们不参与核心 pipeline ready gate：
-
-- 推荐安装 Obsidian App，以便更方便地浏览、编辑 Markdown 和双链。
-- 需要 Obsidian CLI、Canvas、Bases 等能力时，再安装通用 Obsidian Skills。
-
-即使两者都不安装，会话采集、Daily backup、Concept review 和只读查询仍可运行。
-
 ## 平时怎么用
 
-设置完成后，让 Automations 维护 Daily / Concepts。之后在任意业务 repo 直接问：
+配置好之后，日常基本不用手动碰 `.vault-meta/` 或 `wiki/sources/`。让 Codex App Automations 定时跑 daily / weekly loop；需要整理最近一周时，也可以在本地配置页复制 prompt 手动跑一次。
+
+之后在任意业务 repo 里直接问 Codex：
 
 ```text
 帮我查一下最近一周主要做了什么
-ABC-123 之前做过哪些决定
-这个功能以前遇到过什么问题
-我改了源码但运行仍是旧行为，按历史经验帮我排查
+这个功能之前遇到过什么问题
+我改了源码，但浏览器还是旧行为，帮我按历史经验排查一下
 ```
 
-Loader 从自身真实路径解析 Vault，读取 `wiki/index.md`，再按意图读取日期页中的历史
-事实或 weekly review 后的 concept。Daily 的 `可复用经验` 只是候选，不会单独作为经验
-生效。Loader 不会读取业务 repo 之外的 `AGENTS.md`，也不会把回答写回 Wiki。
+Codex 会通过 `engineering-memory-loader` 读取本地 wiki，优先看 `wiki/hot.md` / `wiki/index.md`，再按 key 搜索 Daily Wiki 和 concepts，最后综合成一个答案。
 
 ## 当前支持范围
 
 | 类型 | 当前支持 |
 |---|---|
-| Session sources | Codex：`~/.codex/sessions/`、`~/.codex/archived_sessions/`；Claude Code：`~/.claude/projects/` |
-| Scheduled writer | Codex App Automations；同一个 Vault 保持 single writer |
-| Query | 时间范围、精确 key、concept / decision、debug / repeated failure |
-| Storage | 本地 Markdown；原始 JSONL 不复制进 Vault |
+| Source 输入 | 支持 Codex、Claude Code 和自定义文件夹。Codex 读取 `~/.codex/sessions/` 和 `~/.codex/archived_sessions/`；Claude Code 读取 `~/.claude/projects/`。Session 内的截图会先进入本地 evidence inbox，再由 Daily Wiki 选择有价值的视觉证据。 |
+| Runner 定时执行 | 当前只支持 Codex App Automations 跑 daily / weekly job。为了避免双写，同一个 vault 只允许一个定时 runner 写入；Codex CLI + launchd / cron、Claude Code runner 还在开发中。 |
 
-Capture 会把 session 内图片临时提取到 gitignored 的 `.vault-meta/captures/assets/`，供
-Daily 编译时查看；不会自动晋升图片或生成图。
+## 本地与隐私
 
-## 目录
+- 本地配置页只绑定 `127.0.0.1`。
+- 本地配置写入 `.vault-meta/`，该目录不会进入 git。
+- `.agent/external/` 用于放第三方依赖 checkout，也不会进入 git。
+- 原始 session logs 仍留在本机原位置；本 repo 只保存整理后的轻量 wiki 页面和导航。
+- Session 图片先写入 gitignored 的 `.vault-meta/captures/assets/`；只有被 Daily Wiki 选中的视觉证据才复制到 `wiki/assets/`。公开 repo 前同样需要检查这些图片是否包含私人信息。
+- 生成的 Daily Wiki 可能包含你的私有项目记忆。公开 starter repo 时，不要 commit 个人生成的 wiki 内容。
+
+## 配置和安装
+
+除了第一次运行 `bash scripts/config-ui.sh --open`，日常不需要手动跑安装命令。Obsidian Skills、Claude Obsidian、memory skill 暴露、数据源确认和 Codex Automations 都可以在本地 **设置** 页面里一键检查和安装。
+
+## 目录速览
 
 ```text
 .agent/skills/
-  ai-session-wiki-ingest/
-  agent-memory-reconcile/
-  engineering-memory-loader/
+  daily-ai-chat-pipeline/       # repo-local daily workflow
+  weekly-ai-memory-review/      # repo-local weekly workflow
+  engineering-memory-loader/    # exported query skill
 
 scripts/
-  capture-ai-chats.mjs
-  wiki-lint.mjs
-  setup.sh
+  config-ui.sh                  # local config web entry
+  setup.sh                      # skill setup entry
+  capture-ai-chats.mjs          # deterministic evidence capture
+  wiki-lint.mjs                 # deterministic wiki health report
 
 wiki/
-  index.md
-  log.md
-  sources/ai-chats/
-  concepts/
-  guardrails/Agent Behavior Rules.md
-  templates/Daily AI Chat Summary Template.md
+  sources/ai-chats/             # Daily Wiki pages
+  assets/ai-chats/              # selected durable screenshots
+  canvases/ai-chats/            # optional derived visual maps
+  concepts/                     # reusable engineering lessons
+  guardrails/                   # guardrail triggers and behavior rules
+  index.md / hot.md / log.md    # navigation and recent context
 ```
-
-本地 capture、配置和 review 写入 `.vault-meta/`，该目录不会进入 git。生成的 Daily
-Wiki 可能包含私有项目记忆；公开 starter repo 前请检查内容。
 
 ## 灵感来源
 
-项目源自 [Andrej Karpathy 的 LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)：
-把 external sources 编译成由 LLM 维护的 Wiki，并用小型 Schema 约束写入、查询和
-维护。本项目只增加 agent session 所需的 capture inbox、Daily 压缩层和防回声标记。
+这套本地自进化知识库从 [Andrej Karpathy 的 LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) 思路出发：把 external sources 编译成由 LLM 维护的 Markdown wiki，再用 schema 约束 agent 如何读取、更新和防止膨胀。感谢 Karpathy 把这个模式讲得足够清楚。
+
+## 相关项目
+
+组合使用体验更好：
+
+- [Obsidian](https://github.com/obsidianmd/obsidian-releases)：本地 Markdown vault 和知识库应用。
+- [Obsidian Skills](https://github.com/kepano/obsidian-skills)：统一提供 Obsidian Markdown 和 Canvas 能力；Daily workflow 在视觉证据或复杂链路场景下按需使用。
+- [Claude Obsidian](https://github.com/AgriciDaniel/claude-obsidian)：提供 `wiki-query` 和 self-organizing wiki workflow。
