@@ -1,15 +1,17 @@
 <h1 align="center">LLM Wiki Agent Memory</h1>
 
 <p align="center">
-  <strong>Local-first LLM Wiki for Codex / Claude Code agent memory.</strong>
+  <strong>让 Codex / Claude Code 记住你做过的工程工作。</strong>
 </p>
 
 <p align="center">
-  <strong>把 Codex / Claude Code 的本机会话整理成可查询的 Obsidian 风格本地 wiki，并在需要时带回 agent。</strong>
+  把本机会话编译成可查询、可审计的 Markdown Wiki；纯本地，无需向量数据库。
 </p>
 
 <p align="center">
-  <strong>本地优先、纯 Markdown、无需向量数据库的 Codex / Claude Code 工程记忆。</strong>
+  <a href="https://github.com/miniLV/llm-wiki-agent-memory/stargazers"><img src="https://img.shields.io/github/stars/miniLV/llm-wiki-agent-memory?style=flat-square" alt="GitHub stars" /></a>
+  <a href="https://github.com/miniLV/llm-wiki-agent-memory/releases/latest"><img src="https://img.shields.io/github/v/release/miniLV/llm-wiki-agent-memory?style=flat-square" alt="Latest release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/miniLV/llm-wiki-agent-memory?style=flat-square" alt="License" /></a>
 </p>
 
 <p align="center">
@@ -18,23 +20,35 @@
 </p>
 
 <p align="center">
-  <code>bash scripts/config-ui.sh --open</code>
+  <a href="#3-分钟开始"><strong>3 分钟开始</strong></a> ·
+  <a href="#它解决什么"><strong>为什么需要它</strong></a> ·
+  <a href="https://github.com/miniLV/llm-wiki-agent-memory/releases/latest"><strong>下载最新版</strong></a>
 </p>
 
 <p align="center">
   <img src="docs/assets/demo.gif" alt="LLM Wiki Agent Memory 演示" width="900" />
 </p>
 
-## 这是什么
+## 它解决什么
 
-这是一个本地优先的 agent memory starter。它不把不断增长的记忆塞进 `AGENTS.md`，而是把 Codex / Claude Code 的本机会话整理成一个 Markdown wiki，再通过 `engineering-memory-loader` 让 Codex 在其他 repo 里按需查询历史背景、工程决策和防踩坑规则。
+AI 编程助手每次开启新任务，都可能重复调查你已经解决过的问题。这个项目把 Codex / Claude Code 的本机会话整理成一个 Markdown Wiki，再通过 `engineering-memory-loader` 按需找回历史背景、工程决策和防踩坑经验。
 
-适合你想解决这些问题：
+你会直接得到：
 
-- agent 忘记最近做过什么。
-- debug 时需要查以前踩过的坑。
-- 项目决策散落在对话里，没有稳定入口。
-- 你想保留本地私有记忆，但不想上云或引入复杂 RAG。
+- **不再重复调查**：在新任务中召回以前的结论、命令和失败原因。
+- **记忆可审计**：所有内容都是普通 Markdown，可以阅读、修改和 Git 管理。
+- **数据留在本机**：不上传 session，不依赖向量数据库或托管记忆服务。
+- **避免 AI 自我强化**：未经复核的 Daily 候选不会直接成为长期经验。
+
+## 3 分钟开始
+
+```bash
+git clone https://github.com/miniLV/llm-wiki-agent-memory.git
+cd llm-wiki-agent-memory
+bash scripts/config-ui.sh --open
+```
+
+如果这个项目解决了你的 Agent 失忆问题，欢迎点一个 ⭐，也欢迎在 Issues 里告诉我你的工作流。
 
 ## 架构亮点
 
@@ -69,14 +83,6 @@
 3. 在 **配置和运行** 页确认数据源，默认支持 Codex session logs 和 Claude Code session logs，也可以加自定义文件夹。
 4. 在 **自动化** 页复制 prompt 到 Codex App，创建或更新 daily / weekly memory loop。
 5. 页面显示 ready 后，就可以在其他 repo 里直接问 Codex 历史问题。
-
-## 5 分钟开始
-
-```bash
-git clone https://github.com/miniLV/llm-wiki-agent-memory.git
-cd llm-wiki-agent-memory
-bash scripts/config-ui.sh --open
-```
 
 ## 平时怎么用
 
