@@ -1,7 +1,5 @@
 ---
 date: 2099-01-01
-source_links:
-  - "~/.codex/sessions/2099/01/01/sample-session.jsonl"
 lookup_keys: [sample-feature, sample-repo, old behavior, source map, running bundle]
 confidence: high
 contains_vault_answer: false
@@ -15,6 +13,9 @@ contains_vault_answer: false
 
 ## 关键会话
 
+### Sample Feature：浏览器仍加载旧 bundle
+
+- 证据来源：[Codex · codex-00000000-0000-0000-0000-000000000000](../../../.vault-meta/captures/ai-chats/2099-01-01.md#codex-00000000-0000-0000-0000-000000000000)
 - 用户反馈已经修改源码，但浏览器仍显示旧行为。
 - Agent 先检查构建输出、source map 和 dev server 状态，再回到源码推理。
 - 最终发现本地 dev server 仍在提供旧 bundle。

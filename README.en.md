@@ -27,7 +27,7 @@ Use it when:
 - Two-layer memory: Daily Wiki pages keep concrete evidence and lookup keys; Weekly Review promotes only recurring topics into concepts / guardrails and keeps `index.md` / `hot.md` useful for future cross-session rollups.
 - Visual evidence: daily capture extracts session screenshots into a local evidence inbox and scores their evidence value before promotion. When relationship complexity crosses the threshold, the workflow automatically creates or updates a topic Canvas; simpler chains use Mermaid or prose, while searchable text remains canonical.
 - Anti-bloat rules: ordinary ticket / project keys are not promoted into durable memory by default; they are retrieved from Daily Wiki on demand. Only stable parent topics or long-running workstreams enter the index. Behavior rules are capped at 10 and must be merged, demoted, or pruned when full.
-- Auditability: normal queries use Daily Wiki pages plus `index.md` / `hot.md`; original session links are opened only for exact command output or disputed evidence.
+- Auditability: every Daily key topic links only its supporting capture Evidence Cards. Each card identifies Codex or Claude Code and retains the original session path; raw JSONL is opened only for exact output or disputed audits.
 
 ### Architecture Diagrams
 

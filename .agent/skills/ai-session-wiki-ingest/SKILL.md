@@ -66,9 +66,9 @@ of replacing it with a shorter fallback.
 ### 1. Inventory Before Summarizing
 
 Read every evidence card, not only the capture summary or the first few cards. Build a
-scratch coverage ledger with: source file, workstream, final state, must-keep facts,
-and either the destination Daily topic or an explicit skip reason. Do not persist this
-ledger as a new Wiki layer.
+scratch coverage ledger with: Evidence ID, Agent, source file, workstream, final
+state, must-keep facts, and either the destination Daily topic or an explicit skip
+reason. Do not persist this ledger as a new Wiki layer.
 
 A high-signal workstream includes any substantive root-cause investigation,
 implementation or delivery, decision with alternatives, user correction, failed then
@@ -127,8 +127,15 @@ Apply the configured detail level without changing evidence coverage:
   raw logs.
 - Keep exact ids, repo names, aliases, functions, commands, paths, tools, and versions
   in body text and `lookup_keys` when they will help later retrieval.
-- Derive `source_links` from every original session actually supporting the Daily;
-  each `关键会话` topic must be traceable to at least one of them.
+- Do not put original session paths or a page-wide source list in Daily frontmatter.
+- Under every `###` topic in `关键会话`, make the first content line
+  `- 证据来源：` with one or more Markdown links to the exact supporting Evidence
+  Card anchors in `.vault-meta/captures/ai-chats/YYYY-MM-DD.md`. Label every link
+  with the card's `Agent` (`Codex` or `Claude Code`) and stable
+  Evidence ID. Cite only cards that materially support that topic; do not attach the
+  whole day's card list to every topic.
+- Keep the original session path only in the capture card. The required audit chain
+  is `Daily topic -> capture Evidence Card -> original session`.
 - Put a lesson in `可复用经验` only when it may help a future task. It remains backup
   evidence and an unreviewed candidate; query must not consume it as effective
   reusable guidance. This workflow never creates concepts or behavior rules.
@@ -164,8 +171,9 @@ silently deliver a shallow page or claim success from the non-strict lint report
   ledger is present. Treat roughly 1,200 words as the normal baseline; if the page is
   materially shorter, verify that this is caused by genuinely sparse evidence and
   report that reason instead of silently publishing a compressed Daily.
-- `source_links` contains every original session used as evidence, and each key topic
-  has a supporting link.
+- Every `关键会话` topic links its exact supporting capture Evidence Card(s), the
+  link labels identify Codex or Claude Code, and each linked card contains the
+  original session path.
 - The page contains enough problem, conclusion, evidence, and impact context for a
   normal query without reopening raw logs.
 - The page is organized around useful outcomes rather than chat chronology or a

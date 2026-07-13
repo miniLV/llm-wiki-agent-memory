@@ -39,7 +39,10 @@ test("capture writes session evidence without Daily conclusions", () => {
   ].map(JSON.stringify).join("\n") + "\n");
 
   const text = runCapture({ fakeHome, output, config });
-  assert.match(text, /capture_version: 7/);
+  assert.match(text, /capture_version: 8/);
+  assert.match(text, /<a id="codex-rollout-[0-9a-f]{10}"><\/a>/);
+  assert.match(text, /Evidence ID: codex-rollout-[0-9a-f]{10}/);
+  assert.match(text, /Agent: Codex/);
   assert.match(text, /contains_vault_answer: false/);
   assert.match(text, /Contains vault answer: false/);
   assert.match(text, /Implement multilingual UI without layout shift/);
@@ -329,6 +332,8 @@ test("capture drops Claude tool-result pseudo-users and preserves end-turn outco
     },
   ].map(JSON.stringify).join("\n") + "\n");
   const text = runCapture({ fakeHome, output, config, extraEnv: { TZ: "UTC" } });
+  assert.match(text, /Evidence ID: claude-session-[0-9a-f]{10}/);
+  assert.match(text, /Agent: Claude Code/);
   assert.match(text, /Find the real root cause/);
   assert.match(text, /CLAUDE_FINAL_OUTCOME verified/);
   assert.doesNotMatch(text, /NOISY_TOOL_OUTPUT/);
@@ -352,6 +357,27 @@ test("capture matches Claude timestamps by local date", () => {
   assert.match(text, /Session cards: 1/);
   assert.match(text, /Review local timezone capture/);
   assert.match(text, /record timestamp 2099-01-01T16:30:00.000Z/);
+});
+
+test("capture keeps Codex identity and stable ID for archived storage", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "capture-ai-chats-archived-"));
+  const fakeHome = path.join(tmp, "home");
+  const archivedDir = path.join(fakeHome, ".codex", "archived_sessions");
+  const output = path.join(tmp, "capture.md");
+  const config = path.join(tmp, "config.json");
+  const id = "019f0000-1111-7222-8333-444444444444";
+  fs.mkdirSync(archivedDir, { recursive: true });
+  fs.writeFileSync(config, JSON.stringify({ codexSourcesEnabled: true, claudeSourcesEnabled: false }));
+  fs.writeFileSync(path.join(archivedDir, `rollout-2099-01-02T01-00-00-${id}.jsonl`), [
+    { timestamp: "2099-01-02T01:00:00Z", role: "user", content: "Audit archived session identity", cwd: "/tmp/project" },
+    { timestamp: "2099-01-02T01:01:00Z", role: "assistant", content: "Archived storage does not change the agent identity." },
+  ].map(JSON.stringify).join("\n") + "\n");
+
+  const text = runCapture({ fakeHome, output, config, extraEnv: { TZ: "UTC" } });
+  assert.match(text, new RegExp(`Evidence ID: codex-${id}`));
+  assert.match(text, /Agent: Codex/);
+  assert.doesNotMatch(text, /Agent: Codex archived/);
+  assert.match(text, /Date match: archived rollout filename/);
 });
 
 test("capture slices multi-day sessions before computing the derived flag", () => {

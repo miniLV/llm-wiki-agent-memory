@@ -12,7 +12,7 @@ if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
   process.exit(1);
 }
 
-const captureVersion = 7;
+const captureVersion = 8;
 const memoryDerivedMarker = "<!-- llm-wiki-memory:derived -->";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputPath = process.env.LLM_WIKI_CAPTURE_OUTPUT_PATH ||
@@ -91,6 +91,19 @@ function readJsonl(file) {
 
 function compactPath(file) {
   return file.startsWith(home) ? `~${file.slice(home.length)}` : file;
+}
+
+function sessionEvidenceId(file, sourceKind) {
+  const prefix = sourceKind === "claude"
+    ? "claude"
+    : "codex";
+  const stem = path.basename(file, path.extname(file));
+  const uuid = stem.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0];
+  if (uuid) return `${prefix}-${uuid.toLowerCase()}`;
+
+  const label = stem.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "session";
+  const hash = crypto.createHash("sha256").update(path.resolve(file)).digest("hex").slice(0, 10);
+  return `${prefix}-${label}-${hash}`;
 }
 
 function firstString(...values) {
@@ -604,6 +617,7 @@ function sessionEvidence(file, agent, sourceKind) {
 
   return {
     kind: "session",
+    evidenceId: sessionEvidenceId(file, sourceKind),
     agent,
     model,
     containsVaultAnswer: derived,
@@ -655,7 +669,7 @@ if (codexSourcesEnabled) {
     })),
     ...walk(codexArchivedDir, (file) => path.basename(file).startsWith(`rollout-${date}`) && file.endsWith(".jsonl")).map((file) => ({
       file,
-      agent: "Codex archived",
+      agent: "Codex",
       sourceKind: "codex-archived",
     })),
   );
@@ -672,12 +686,23 @@ if (claudeSourcesEnabled) {
 const sessionResults = sources
   .map(({ file, agent, sourceKind }) => sessionEvidence(file, agent, sourceKind))
   .filter(Boolean);
-const sessions = sessionResults.filter((session) => !session.skipped);
+const seenEvidenceIds = new Set();
+const duplicateEvidenceIds = new Set();
+const sessions = sessionResults.filter((session) => {
+  if (session.skipped) return false;
+  if (seenEvidenceIds.has(session.evidenceId)) {
+    duplicateEvidenceIds.add(session.evidenceId);
+    return false;
+  }
+  seenEvidenceIds.add(session.evidenceId);
+  return true;
+});
 const internalSubagentSessionsSkipped = sessionResults.filter(
   (session) => session.skipped && session.reason === "internal_subagent"
 ).length;
 
 const allWarnings = [...new Set(sessions.flatMap((session) => session.warnings))];
+if (duplicateEvidenceIds.size > 0) allWarnings.push("duplicate_session_source_filtered");
 const visualEvidenceCount = sessions.reduce((sum, session) => sum + session.visuals.length, 0);
 const hasVaultAnswer = sessions.some((session) => session.containsVaultAnswer);
 if (sessions.length === 0) allWarnings.push("no_sources");
@@ -724,7 +749,9 @@ const lines = [
 let sessionIndex = 0;
 for (const session of sessions) {
   sessionIndex += 1;
+  lines.push(`<a id="${session.evidenceId}"></a>`, "");
   lines.push(`### session-${String(sessionIndex).padStart(3, "0")} · ${session.repoName}`, "");
+  pushField(lines, "Evidence ID", session.evidenceId);
   pushField(lines, "Kind", "agent session");
   pushField(lines, "Agent", session.agent);
   pushField(lines, "Contains vault answer", session.containsVaultAnswer);

@@ -37,13 +37,11 @@ fields:
 
 ```yaml
 date: YYYY-MM-DD
-source_links: []
 lookup_keys: []
 confidence: high | medium | low
 contains_vault_answer: false
 ```
 
-- `source_links` points to original session files, never the capture inbox.
 - `lookup_keys` is the only lookup metadata list. Put ticket ids, repos, feature
   aliases, tools, important paths, functions, and versions here when useful. Do not
   maintain parallel `tickets`, `features`, `repos`, or `tools` fields.
@@ -54,10 +52,29 @@ contains_vault_answer: false
 
 The body has three sections: `摘要`, `关键会话`, and `可复用经验`. It should preserve
 decisions, evidence, rejected options, outcomes, and unresolved work without copying
-the full transcript. A Daily page is backup evidence, not effective reusable
-knowledge. Its `可复用经验` section contains unreviewed candidates only; query must not
-present them as reusable guidance unless Reconcile has promoted the claim into a
-Concept.
+the full transcript.
+
+Each `###` topic under `关键会话` owns its provenance. Its first content line is
+`- 证据来源：` followed by one or more Markdown links to the exact Evidence Cards in
+the dated capture, for example:
+
+```markdown
+### Runtime verification
+
+- 证据来源：[Codex · codex-019f...](../../../.vault-meta/captures/ai-chats/2026-07-13.md#codex-019f...)
+```
+
+Do not put original session paths or a page-wide source list in Daily frontmatter.
+The linked capture card records its stable Evidence ID, `Agent: Codex` or
+`Agent: Claude Code`, and the original session path. This gives the audit chain
+`Daily topic -> capture Evidence Card -> original session` without making a Daily
+look as if it was compiled directly from raw JSONL. A topic may cite multiple cards
+when they materially support the same workstream, but it must not cite unrelated
+cards merely because they occurred on the same date.
+
+A Daily page is backup evidence, not effective reusable knowledge. Its `可复用经验`
+section contains unreviewed candidates only; query must not present them as reusable
+guidance unless Reconcile has promoted the claim into a Concept.
 
 ## Anti-echo Provenance
 

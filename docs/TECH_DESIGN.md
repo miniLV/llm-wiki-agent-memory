@@ -31,7 +31,8 @@ Skills do not redefine the schema:
 2. Daily inventories every card, drills into the original date slice only when a
    high-signal digest is incomplete, checks workstream coverage, then writes one
    human-readable page with the shape defined by `SCHEMA.md` and appends
-   `wiki/log.md`.
+   `wiki/log.md`. Each key topic links only its supporting capture Evidence Cards;
+   those cards identify Codex or Claude Code and retain the raw session path.
 3. Reconcile reads the latest seven Daily pages by default, runs
    `scripts/wiki-lint.mjs`, updates or merges Concepts, and keeps a maximum of 10
    directly linked Behavior Rules.
@@ -67,6 +68,7 @@ counts, and per-item provenance labels.
 
 - core files exist;
 - Daily frontmatter and section shape match `SCHEMA.md`;
+- every Daily key topic links exact Evidence Cards from its dated capture;
 - wikilinks resolve;
 - Concepts have visible Daily evidence;
 - Behavior Rules stay within the cap and link to evidence.

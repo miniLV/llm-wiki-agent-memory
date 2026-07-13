@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,7 +13,7 @@ const strict = process.argv.includes("--strict");
 const config = JSON.parse(read(path.join(repoRoot, ".vault-meta", "config.json")) || "{}");
 const detailedDaily = config.dailySummaryDetail !== "concise";
 
-const dailyFields = ["date", "source_links", "lookup_keys", "confidence", "contains_vault_answer"];
+const dailyFields = ["date", "lookup_keys", "confidence", "contains_vault_answer"];
 const issues = [];
 const stats = { dailyPages: 0, concepts: 0, wikiFiles: 0, promotedRules: 0 };
 
@@ -59,26 +58,6 @@ function parseFrontmatter(text) {
   return { fields };
 }
 
-function listFieldValues(fields, key) {
-  const value = String(fields.get(key) || "").trim();
-  if (!value || value === "[]") return [];
-  if (value.startsWith("[") && value.endsWith("]")) {
-    return value.slice(1, -1)
-      .split(",")
-      .map((item) => item.trim().replace(/^['"]|['"]$/g, ""))
-      .filter(Boolean);
-  }
-  return value.split("\n")
-    .map((line) => line.match(/^\s+-\s+(.+)$/)?.[1]?.trim().replace(/^['"]|['"]$/g, ""))
-    .filter(Boolean);
-}
-
-function expandHome(file) {
-  return file === "~" || file.startsWith("~/")
-    ? path.join(os.homedir(), file.slice(2))
-    : file;
-}
-
 function section(text, heading) {
   const lines = text.split(/\r?\n/);
   const start = lines.findIndex((line) => line.trim() === `## ${heading}`);
@@ -89,6 +68,49 @@ function section(text, heading) {
     content.push(lines[index]);
   }
   return content.join("\n").trim();
+}
+
+function headingBlocks(text, heading) {
+  const content = section(text, heading);
+  const lines = content.split(/\r?\n/);
+  const blocks = [];
+  let current = null;
+  for (const line of lines) {
+    const match = line.match(/^###\s+(.+)$/);
+    if (match) {
+      current = { title: match[1].trim(), lines: [] };
+      blocks.push(current);
+    } else if (current) {
+      current.lines.push(line);
+    }
+  }
+  return blocks;
+}
+
+function headingPreamble(text, heading) {
+  const lines = section(text, heading).split(/\r?\n/);
+  const firstTopic = lines.findIndex((line) => /^###\s+/.test(line));
+  return (firstTopic === -1 ? lines : lines.slice(0, firstTopic)).filter((line) => line.trim());
+}
+
+function captureEvidenceCards(text) {
+  const cards = new Map();
+  const duplicateIds = new Set();
+  const invalidCards = [];
+  for (const chunk of text.split(/(?=<a id=")/)) {
+    const anchor = chunk.match(/^<a id="([^"]+)"><\/a>/)?.[1];
+    if (!anchor) continue;
+    const evidenceId = chunk.match(/^- Evidence ID:\s*(\S+)\s*$/m)?.[1];
+    const agent = chunk.match(/^- Agent:\s*(.+?)\s*$/m)?.[1];
+    const sourceFile = chunk.match(/^- Source file:\s*(.+?)\s*$/m)?.[1];
+    if (!evidenceId) continue;
+    if (cards.has(evidenceId)) duplicateIds.add(evidenceId);
+    cards.set(evidenceId, { anchor, agent, sourceFile });
+    if (anchor !== evidenceId || !/^(?:codex|claude)-[a-z0-9-]+$/.test(evidenceId) || !["Codex", "Claude Code"].includes(agent) || !sourceFile) {
+      invalidCards.push(evidenceId);
+    }
+  }
+  return { cards, duplicateIds, invalidCards };
 }
 
 function collectPages(files) {
@@ -134,10 +156,6 @@ function checkDailyPages() {
     if (fields.has("date") && String(fields.get("date")).replace(/^['"]|['"]$/g, "") !== filenameDate) {
       add("error", "daily-date", file, `Frontmatter date must match filename: ${filenameDate}.`);
     }
-    const sourceLinks = listFieldValues(fields, "source_links");
-    if (fields.has("source_links") && sourceLinks.length === 0) {
-      add("error", "daily-source-links", file, "source_links must include at least one original session file.");
-    }
     if (fields.has("confidence") && !/^(high|medium|low)$/.test(String(fields.get("confidence")).trim())) {
       add("error", "daily-confidence", file, "confidence must be high, medium, or low.");
     }
@@ -147,19 +165,55 @@ function checkDailyPages() {
     for (const heading of ["摘要", "关键会话", "可复用经验"]) {
       if (!section(text, heading)) add("error", "daily-section", file, `Missing or empty section: ## ${heading}.`);
     }
+    if (/(?:\/\.codex\/(?:sessions|archived_sessions)\/|\/\.claude\/projects\/)[^\s)\]"']+\.jsonl/.test(text)) {
+      add("error", "daily-raw-session-source", file, "Daily must link capture Evidence Cards, not raw Codex or Claude JSONL paths.");
+    }
 
-    const capture = read(path.join(repoRoot, ".vault-meta", "captures", "ai-chats", `${filenameDate}.md`));
-    const captureSources = new Set(
-      [...capture.matchAll(/^- Source file:\s*(.+)$/gm)].map((match) => path.resolve(expandHome(match[1].trim()))),
-    );
-    for (const source of sourceLinks) {
-      if (!path.isAbsolute(source)) {
-        add("error", "daily-source-links", file, `source_link must be absolute: ${source}`);
+    const capturePath = path.join(repoRoot, ".vault-meta", "captures", "ai-chats", `${filenameDate}.md`);
+    const capture = read(capturePath);
+    const captureVersion = Number(capture.match(/^capture_version:\s*(\d+)\s*$/m)?.[1] || 0);
+    const { cards: captureCards, duplicateIds, invalidCards } = captureEvidenceCards(capture);
+    const topics = headingBlocks(text, "关键会话");
+    if (!capture) add("error", "daily-capture", file, `Dated capture does not exist: ${relative(capturePath)}.`);
+    else if (captureVersion < 8) add("error", "daily-capture-version", file, `Dated capture must be version 8 or newer, found ${captureVersion || "none"}.`);
+    for (const evidenceId of duplicateIds) add("error", "daily-capture-card", file, `Dated capture has duplicate Evidence ID: ${evidenceId}.`);
+    for (const evidenceId of invalidCards) add("error", "daily-capture-card", file, `Dated capture has malformed Evidence Card: ${evidenceId}.`);
+    if (headingPreamble(text, "关键会话").length > 0) {
+      add("error", "daily-topic-evidence", file, "## 关键会话 must start with a ### topic; page-wide provenance or preamble is not allowed.");
+    }
+    if (topics.length === 0) add("error", "daily-topic-evidence", file, "## 关键会话 must contain at least one ### topic with exact Evidence Card links.");
+    for (const topic of topics) {
+      const firstContent = topic.lines.find((line) => line.trim());
+      if (!firstContent?.startsWith("- 证据来源：")) {
+        add("error", "daily-topic-evidence", file, `Topic "${topic.title}" must start with - 证据来源：.`);
         continue;
       }
-      const resolved = path.resolve(source);
-      if (!fs.existsSync(resolved)) add("error", "daily-source-links", file, `source_link does not exist: ${source}`);
-      if (!captureSources.has(resolved)) add("error", "daily-source-links", file, `source_link is not listed by the dated capture: ${source}`);
+      const links = [...firstContent.matchAll(/\[([^\]]+)\]\(([^)#]+)#([^)]+)\)/g)];
+      if (links.length === 0) {
+        add("error", "daily-topic-evidence", file, `Topic "${topic.title}" has no linked capture Evidence Card.`);
+        continue;
+      }
+      const linkedIds = new Set();
+      for (const [, label, target, evidenceId] of links) {
+        const canonicalTarget = `../../../.vault-meta/captures/ai-chats/${filenameDate}.md`;
+        if (target !== canonicalTarget) {
+          add("error", "daily-topic-evidence", file, `Topic "${topic.title}" evidence must use ${canonicalTarget}, not ${target}.`);
+          continue;
+        }
+        if (linkedIds.has(evidenceId)) add("error", "daily-topic-evidence", file, `Topic "${topic.title}" links Evidence ID more than once: ${evidenceId}.`);
+        linkedIds.add(evidenceId);
+        const card = captureCards.get(evidenceId);
+        if (!card || card.anchor !== evidenceId) {
+          add("error", "daily-topic-evidence", file, `Topic "${topic.title}" links missing Evidence ID: ${evidenceId}.`);
+          continue;
+        }
+        if (!card.agent || label !== `${card.agent} · ${evidenceId}`) {
+          add("error", "daily-topic-agent", file, `Topic "${topic.title}" must label ${evidenceId} as "${card.agent} · ${evidenceId}".`);
+        }
+        if (!card.sourceFile) {
+          add("error", "daily-topic-evidence", file, `Capture card ${evidenceId} has no original session path.`);
+        }
+      }
     }
     const evidenceCards = Number(capture.match(/^- Evidence cards:\s*(\d+)/m)?.[1] || 0);
     if (detailedDaily && evidenceCards > 0) {
