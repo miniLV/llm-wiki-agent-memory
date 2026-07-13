@@ -15,7 +15,7 @@ contains_vault_answer: false
 
 ### Sample Feature：浏览器仍加载旧 bundle
 
-- 证据来源：[Codex · codex-00000000-0000-0000-0000-000000000000](../../../.vault-meta/captures/ai-chats/2099-01-01.md#codex-00000000-0000-0000-0000-000000000000)
+- 证据来源：[Codex · codex-00000000-0000-0000-0000-000000000000](../../../.vault-meta/captures/ai-chats/2099-01-01.capture.json#codex-00000000-0000-0000-0000-000000000000)
 - 用户反馈已经修改源码，但浏览器仍显示旧行为。
 - Agent 先检查构建输出、source map 和 dev server 状态，再回到源码推理。
 - 最终发现本地 dev server 仍在提供旧 bundle。

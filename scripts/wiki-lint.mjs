@@ -93,10 +93,11 @@ function headingPreamble(text, heading) {
   return (firstTopic === -1 ? lines : lines.slice(0, firstTopic)).filter((line) => line.trim());
 }
 
-function captureEvidenceCards(text) {
+function legacyCaptureEvidenceCards(text) {
   const cards = new Map();
   const duplicateIds = new Set();
   const invalidCards = [];
+  const containsVaultAnswer = text.match(/^contains_vault_answer:\s*(true|false)\s*$/m)?.[1];
   for (const chunk of text.split(/(?=<a id=")/)) {
     const anchor = chunk.match(/^<a id="([^"]+)"><\/a>/)?.[1];
     if (!anchor) continue;
@@ -110,7 +111,59 @@ function captureEvidenceCards(text) {
       invalidCards.push(evidenceId);
     }
   }
-  return { cards, duplicateIds, invalidCards };
+  return {
+    cards,
+    duplicateIds,
+    invalidCards,
+    captureVersion: Number(text.match(/^capture_version:\s*(\d+)\s*$/m)?.[1] || 0),
+    captureDate: "",
+    evidenceCardCount: Number(text.match(/^- Evidence cards:\s*(\d+)/m)?.[1] || cards.size),
+    containsVaultAnswer: containsVaultAnswer ? containsVaultAnswer === "true" : null,
+    invalidDocument: false,
+  };
+}
+
+function jsonCaptureEvidenceCards(text) {
+  let capture;
+  try {
+    capture = JSON.parse(text);
+  } catch {
+    return {
+      cards: new Map(),
+      duplicateIds: new Set(),
+      invalidCards: [],
+      captureVersion: 0,
+      captureDate: "",
+      evidenceCardCount: 0,
+      containsVaultAnswer: null,
+      invalidDocument: true,
+    };
+  }
+  const cards = new Map();
+  const duplicateIds = new Set();
+  const invalidCards = [];
+  for (const card of Array.isArray(capture.cards) ? capture.cards : []) {
+    const evidenceId = String(card?.evidence_id || "");
+    if (cards.has(evidenceId)) duplicateIds.add(evidenceId);
+    cards.set(evidenceId, {
+      anchor: evidenceId,
+      agent: card?.agent,
+      sourceFile: card?.source_file,
+    });
+    if (!/^(?:codex|claude)-[a-z0-9-]+$/.test(evidenceId) || !["Codex", "Claude Code"].includes(card?.agent) || !card?.source_file) {
+      invalidCards.push(evidenceId || "missing");
+    }
+  }
+  return {
+    cards,
+    duplicateIds,
+    invalidCards,
+    captureVersion: Number(capture.capture_version || 0),
+    captureDate: String(capture.date || ""),
+    evidenceCardCount: Number(capture.evidence_card_count ?? cards.size),
+    containsVaultAnswer: typeof capture.contains_vault_answer === "boolean" ? capture.contains_vault_answer : null,
+    invalidDocument: !Array.isArray(capture.cards),
+  };
 }
 
 function collectPages(files) {
@@ -169,13 +222,33 @@ function checkDailyPages() {
       add("error", "daily-raw-session-source", file, "Daily must link capture Evidence Cards, not raw Codex or Claude JSONL paths.");
     }
 
-    const capturePath = path.join(repoRoot, ".vault-meta", "captures", "ai-chats", `${filenameDate}.md`);
+    const jsonCapturePath = path.join(repoRoot, ".vault-meta", "captures", "ai-chats", `${filenameDate}.capture.json`);
+    const legacyCapturePath = path.join(repoRoot, ".vault-meta", "captures", "ai-chats", `${filenameDate}.md`);
+    const jsonTarget = `../../../.vault-meta/captures/ai-chats/${filenameDate}.capture.json`;
+    const legacyTarget = `../../../.vault-meta/captures/ai-chats/${filenameDate}.md`;
+    const usesJsonCapture = text.includes(`${jsonTarget}#`);
+    const usesLegacyCapture = text.includes(`${legacyTarget}#`);
+    const capturePath = usesJsonCapture && fs.existsSync(jsonCapturePath)
+      ? jsonCapturePath
+      : usesLegacyCapture && fs.existsSync(legacyCapturePath)
+        ? legacyCapturePath
+        : fs.existsSync(jsonCapturePath) ? jsonCapturePath : legacyCapturePath;
+    const jsonCapture = capturePath === jsonCapturePath;
     const capture = read(capturePath);
-    const captureVersion = Number(capture.match(/^capture_version:\s*(\d+)\s*$/m)?.[1] || 0);
-    const { cards: captureCards, duplicateIds, invalidCards } = captureEvidenceCards(capture);
+    const parsedCapture = jsonCapture ? jsonCaptureEvidenceCards(capture) : legacyCaptureEvidenceCards(capture);
+    const { cards: captureCards, duplicateIds, invalidCards, captureVersion, captureDate, evidenceCardCount, containsVaultAnswer, invalidDocument } = parsedCapture;
     const topics = headingBlocks(text, "关键会话");
+    const dailyContainsVaultAnswer = String(fields.get("contains_vault_answer") || "").trim();
+    if (/^(true|false)$/.test(dailyContainsVaultAnswer) && containsVaultAnswer !== null && (dailyContainsVaultAnswer === "true") !== containsVaultAnswer) {
+      add("error", "daily-derived-flag", file, `contains_vault_answer must match Capture: expected ${containsVaultAnswer}.`);
+    }
     if (!capture) add("error", "daily-capture", file, `Dated capture does not exist: ${relative(capturePath)}.`);
-    else if (captureVersion < 8) add("error", "daily-capture-version", file, `Dated capture must be version 8 or newer, found ${captureVersion || "none"}.`);
+    else if (invalidDocument) add("error", "daily-capture", file, `Dated capture is not a valid ${jsonCapture ? "JSON" : "Markdown"} Capture: ${relative(capturePath)}.`);
+    else if (jsonCapture && captureVersion < 9) add("error", "daily-capture-version", file, `JSON Capture must be version 9 or newer, found ${captureVersion || "none"}.`);
+    else if (!jsonCapture && captureVersion < 8) add("error", "daily-capture-version", file, `Legacy Markdown capture must be version 8 or newer, found ${captureVersion || "none"}.`);
+    if (jsonCapture && captureDate !== filenameDate) {
+      add("error", "daily-capture-date", file, `JSON Capture date must match Daily filename: expected ${filenameDate}, found ${captureDate || "none"}.`);
+    }
     for (const evidenceId of duplicateIds) add("error", "daily-capture-card", file, `Dated capture has duplicate Evidence ID: ${evidenceId}.`);
     for (const evidenceId of invalidCards) add("error", "daily-capture-card", file, `Dated capture has malformed Evidence Card: ${evidenceId}.`);
     if (headingPreamble(text, "关键会话").length > 0) {
@@ -193,9 +266,12 @@ function checkDailyPages() {
         add("error", "daily-topic-evidence", file, `Topic "${topic.title}" has no linked capture Evidence Card.`);
         continue;
       }
+      if (links.length > 3) {
+        add("error", "daily-topic-evidence", file, `Topic "${topic.title}" must link one to three Evidence Cards.`);
+      }
       const linkedIds = new Set();
       for (const [, label, target, evidenceId] of links) {
-        const canonicalTarget = `../../../.vault-meta/captures/ai-chats/${filenameDate}.md`;
+        const canonicalTarget = jsonCapture ? jsonTarget : legacyTarget;
         if (target !== canonicalTarget) {
           add("error", "daily-topic-evidence", file, `Topic "${topic.title}" evidence must use ${canonicalTarget}, not ${target}.`);
           continue;
@@ -215,12 +291,11 @@ function checkDailyPages() {
         }
       }
     }
-    const evidenceCards = Number(capture.match(/^- Evidence cards:\s*(\d+)/m)?.[1] || 0);
-    if (detailedDaily && evidenceCards > 0) {
+    if (detailedDaily && evidenceCardCount > 0) {
       const body = ["摘要", "关键会话", "可复用经验"].map((heading) => section(text, heading)).join("\n");
       const contentLength = body.replace(/\s/g, "").length;
       if (contentLength < 1200) {
-        add("error", "daily-detailed-depth", file, `Detailed Daily is too shallow for ${evidenceCards} evidence card(s): ${contentLength}/1200 non-whitespace characters.`);
+        add("error", "daily-detailed-depth", file, `Detailed Daily is too shallow for ${evidenceCardCount} evidence card(s): ${contentLength}/1200 non-whitespace characters.`);
       }
       const keySessions = section(text, "关键会话");
       for (const [label, pattern] of [
@@ -317,7 +392,7 @@ function renderMarkdown() {
     "",
     "- Fix deterministic errors before promotion work.",
     "- Apply the provenance and promotion rules from SCHEMA.md.",
-    "- Escalate to original sessions only for insufficient, disputed, or audit-level evidence.",
+    "- For insufficient or disputed evidence, inspect a linked Capture Card before the original session.",
     "",
   );
   return `${lines.join("\n").trimEnd()}\n`;

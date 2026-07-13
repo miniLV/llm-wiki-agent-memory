@@ -20,21 +20,18 @@ function seedCore(root, rules = "No promoted rules yet.\n") {
   write(path.join(root, "wiki", "guardrails", "Agent Behavior Rules.md"), `# Agent Behavior Rules\n\n${rules}`);
 }
 
-function captureCard({ id, agent = "Codex", source = "~/.codex/sessions/example.jsonl" }) {
-  return `capture_version: 8
-
-<a id="${id}"></a>
-
-### session-001 · example
-
-- Evidence ID: ${id}
-- Agent: ${agent}
-- Source file: ${source}
-`;
+function captureCard({ date, id, agent = "Codex", source = "~/.codex/sessions/example.jsonl", containsVaultAnswer = false }) {
+  return `${JSON.stringify({
+    capture_version: 9,
+    date,
+    evidence_card_count: 1,
+    contains_vault_answer: containsVaultAnswer,
+    cards: [{ evidence_id: id, agent, source_file: source, turns: [] }],
+  }, null, 2)}\n`;
 }
 
 function evidenceLink(date, id, agent = "Codex") {
-  return `- 证据来源：[${agent} · ${id}](../../../.vault-meta/captures/ai-chats/${date}.md#${id})`;
+  return `- 证据来源：[${agent} · ${id}](../../../.vault-meta/captures/ai-chats/${date}.capture.json#${id})`;
 }
 
 function runLint(root, strict = false) {
@@ -52,8 +49,8 @@ test("wiki lint detects broken links and the behavior-rule cap", () => {
   const rules = Array.from({ length: 11 }, (_, index) => `${index + 1}. Rule ${index + 1} [[Runtime Artifact Verification]]`).join("\n");
   seedCore(tmp, `${rules}\n`);
   write(
-    path.join(tmp, ".vault-meta", "captures", "ai-chats", "2026-07-01.md"),
-    captureCard({ id: "codex-example" }),
+    path.join(tmp, ".vault-meta", "captures", "ai-chats", "2026-07-01.capture.json"),
+    captureCard({ date: "2026-07-01", id: "codex-example" }),
   );
   write(
     path.join(tmp, "wiki", "sources", "ai-chats", "2026-07-01.md"),
@@ -131,11 +128,12 @@ tickets: [BILLING7-88]
 test("wiki lint accepts a concise valid Daily page without content heuristics", () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "wiki-lint-valid-"));
   seedCore(tmp);
+  write(path.join(tmp, ".vault-meta", "config.json"), '{"dailySummaryDetail":"concise"}\n');
   const source = path.join(tmp, "sessions", "example.jsonl");
   write(source, "{}\n");
   write(
-    path.join(tmp, ".vault-meta", "captures", "ai-chats", "2026-07-03.md"),
-    captureCard({ id: "codex-example", source }),
+    path.join(tmp, ".vault-meta", "captures", "ai-chats", "2026-07-03.capture.json"),
+    captureCard({ date: "2026-07-03", id: "codex-example", source, containsVaultAnswer: true }),
   );
   write(
     path.join(tmp, "wiki", "sources", "ai-chats", "2026-07-03.md"),
@@ -168,12 +166,110 @@ ${evidenceLink("2026-07-03", "codex-example")}
   assert.equal(json.issues.length, 0);
 });
 
+test("wiki lint keeps legacy Markdown captures readable for historical Daily pages", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "wiki-lint-legacy-capture-"));
+  const date = "2026-06-30";
+  seedCore(tmp);
+  write(path.join(tmp, ".vault-meta", "config.json"), '{"dailySummaryDetail":"concise"}\n');
+  write(
+    path.join(tmp, ".vault-meta", "captures", "ai-chats", `${date}.md`),
+    `capture_version: 8\ncontains_vault_answer: false\n\n<a id="codex-legacy"></a>\n\n- Evidence ID: codex-legacy\n- Agent: Codex\n- Source file: ~/.codex/sessions/legacy.jsonl\n`,
+  );
+  write(
+    path.join(tmp, ".vault-meta", "captures", "ai-chats", `${date}.capture.json`),
+    captureCard({ date, id: "codex-json" }),
+  );
+  write(
+    path.join(tmp, "wiki", "sources", "ai-chats", `${date}.md`),
+    `---
+date: ${date}
+lookup_keys: []
+confidence: medium
+contains_vault_answer: false
+---
+
+## 摘要
+
+- 历史记录。
+
+## 关键会话
+
+### Legacy provenance
+
+- 证据来源：[Codex · codex-legacy](../../../.vault-meta/captures/ai-chats/${date}.md#codex-legacy)
+
+- 已保留旧审计链。
+
+## 可复用经验
+
+- 无。
+`,
+  );
+
+  const { json } = runLint(tmp, true);
+  assert.equal(json.issues.filter((issue) => issue.severity === "error").length, 0);
+});
+
+test("wiki lint enforces the Capture-derived flag and at most three topic links", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "wiki-lint-topic-limits-"));
+  const date = "2026-07-08";
+  seedCore(tmp);
+  write(path.join(tmp, ".vault-meta", "config.json"), '{"dailySummaryDetail":"concise"}\n');
+  const cards = Array.from({ length: 4 }, (_, index) => ({
+    evidence_id: `codex-card-${index + 1}`,
+    agent: "Codex",
+    source_file: `~/.codex/sessions/card-${index + 1}.jsonl`,
+    turns: [],
+  }));
+  write(
+    path.join(tmp, ".vault-meta", "captures", "ai-chats", `${date}.capture.json`),
+    `${JSON.stringify({
+      capture_version: 9,
+      date,
+      evidence_card_count: cards.length,
+      contains_vault_answer: true,
+      cards,
+    }, null, 2)}\n`,
+  );
+  const links = cards.map((card) => `[Codex · ${card.evidence_id}](../../../.vault-meta/captures/ai-chats/${date}.capture.json#${card.evidence_id})`).join("、");
+  write(
+    path.join(tmp, "wiki", "sources", "ai-chats", `${date}.md`),
+    `---
+date: ${date}
+lookup_keys: []
+confidence: medium
+contains_vault_answer: false
+---
+
+## 摘要
+
+- 调查完成。
+
+## 关键会话
+
+### Too many sources
+
+- 证据来源：${links}
+
+- 结果已验证。
+
+## 可复用经验
+
+- 无。
+`,
+  );
+
+  const { report } = runLint(tmp);
+  assert.match(report, /contains_vault_answer must match Capture: expected true/);
+  assert.match(report, /must link one to three Evidence Cards/);
+});
+
 test("wiki lint rejects topic evidence links that do not resolve to a dated capture card", () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "wiki-lint-sources-"));
   seedCore(tmp);
   write(
-    path.join(tmp, ".vault-meta", "captures", "ai-chats", "2026-07-05.md"),
-    captureCard({ id: "codex-listed" }),
+    path.join(tmp, ".vault-meta", "captures", "ai-chats", "2026-07-05.capture.json"),
+    captureCard({ date: "2026-07-05", id: "codex-listed" }),
   );
   write(
     path.join(tmp, "wiki", "sources", "ai-chats", "2026-07-05.md"),
@@ -210,8 +306,8 @@ test("wiki lint requires every topic link to preserve the capture Agent label", 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "wiki-lint-agent-"));
   seedCore(tmp);
   write(
-    path.join(tmp, ".vault-meta", "captures", "ai-chats", "2026-07-06.md"),
-    captureCard({ id: "claude-session", agent: "Claude Code", source: "~/.claude/projects/example/session.jsonl" }),
+    path.join(tmp, ".vault-meta", "captures", "ai-chats", "2026-07-06.capture.json"),
+    captureCard({ date: "2026-07-06", id: "claude-session", agent: "Claude Code", source: "~/.claude/projects/example/session.jsonl" }),
   );
   write(
     path.join(tmp, "wiki", "sources", "ai-chats", "2026-07-06.md"),
@@ -248,8 +344,8 @@ test("wiki lint rejects page-wide provenance and raw JSONL paths in Daily conten
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "wiki-lint-provenance-"));
   seedCore(tmp);
   write(
-    path.join(tmp, ".vault-meta", "captures", "ai-chats", "2026-07-07.md"),
-    captureCard({ id: "codex-session" }),
+    path.join(tmp, ".vault-meta", "captures", "ai-chats", "2026-07-07.capture.json"),
+    captureCard({ date: "2026-07-07", id: "codex-session" }),
   );
   write(
     path.join(tmp, "wiki", "sources", "ai-chats", "2026-07-07.md"),
@@ -289,9 +385,11 @@ test("wiki lint rejects a shallow Daily when detailed capture evidence exists", 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "wiki-lint-detailed-"));
   seedCore(tmp);
   write(path.join(tmp, ".vault-meta", "config.json"), '{"dailySummaryDetail":"detailed"}\n');
+  const capture = JSON.parse(captureCard({ date: "2026-07-04", id: "codex-detailed" }));
+  capture.evidence_card_count = 2;
   write(
-    path.join(tmp, ".vault-meta", "captures", "ai-chats", "2026-07-04.md"),
-    `## Capture Summary\n\n- Evidence cards: 2\n\n${captureCard({ id: "codex-detailed" })}`,
+    path.join(tmp, ".vault-meta", "captures", "ai-chats", "2026-07-04.capture.json"),
+    `${JSON.stringify(capture, null, 2)}\n`,
   );
   write(
     path.join(tmp, "wiki", "sources", "ai-chats", "2026-07-04.md"),

@@ -22,7 +22,7 @@ const portArg = args.find((arg) => arg.startsWith("--port="));
 const port = Number(portArg?.split("=")[1] || process.env.PORT || 8765);
 const host = process.env.HOST || "127.0.0.1";
 const defaultDailyAutoTime = "17:00";
-const defaultWeeklyAutoTime = "17:00";
+const defaultWeeklyAutoTime = "17:30";
 
 function today() {
   const value = new Date();
@@ -128,6 +128,7 @@ function appVersion() {
 }
 
 function commandPath(command) {
+  if (command === "node") return process.execPath;
   const paths = (process.env.PATH || "").split(path.delimiter);
   for (const dir of paths) {
     const full = path.join(dir, command);
@@ -299,6 +300,8 @@ function codexAppAutomationStatus() {
       name: found.name || "",
       status: found.status || "unknown",
       rrule: found.rrule || "",
+      model: found.model || "",
+      reasoningEffort: found.reasoning_effort || "",
       file: found.file,
       summary: `${found.status || "unknown"} · ${found.name || found.id || "unnamed"}`,
     };
@@ -313,6 +316,7 @@ function codexAppAutomationStatus() {
 
 function resourceStatus(config) {
   const env = { ...process.env };
+  env.PATH = [path.dirname(process.execPath), env.PATH].filter(Boolean).join(path.delimiter);
   if (config.obsidianSkillsRepo) env.OBSIDIAN_SKILLS_REPO = config.obsidianSkillsRepo;
   if (config.obsidianSkillsDir) env.OBSIDIAN_SKILLS_DIR = config.obsidianSkillsDir;
   if (config.claudeObsidianRepo) env.CLAUDE_OBSIDIAN_REPO = config.claudeObsidianRepo;
@@ -531,6 +535,8 @@ Schedule:
 Important:
 - Use Codex App Automations as the only scheduled runner.
 - Prefer updating existing automations with these names or ids instead of creating duplicates.
+- When an automation already exists, preserve its current model and reasoning effort exactly; do not reset either setting to the creation defaults below.
+- Apply the model and reasoning defaults below only when creating a missing automation.
 - Run both automations in the local execution environment with cwd ${repoRoot}.
 - Do not git commit memory changes from these automation runs.
 
@@ -538,19 +544,25 @@ Create/update automation 1:
 - id/name: llm-wiki-agent-memory-daily / LLM Wiki Agent Memory - Daily
 - kind: cron
 - status: ACTIVE
+- creation default model: gpt-5.6-luna
+- creation default reasoning effort: medium
 - prompt:
 In ${repoRoot}, run the repo-local daily agent memory workflow for today's local date.
 
-Use \`date +%F\` for the date. Read \`.agent/skills/ai-session-wiki-ingest/SKILL.md\` completely and follow it as the source of truth. Report what changed or why it was skipped. Do not git commit memory changes.
+Use \`date +%F\` for the date. Read \`.agent/skills/ai-session-wiki-ingest/SKILL.md\` completely and follow it as the source of truth. Report what changed or why it was skipped. Do not git commit memory changes. Do not read or update automation memory files for this Daily run.
 
 Create/update automation 2:
 - id/name: llm-wiki-agent-memory-weekly / LLM Wiki Agent Memory - Weekly
 - kind: cron
 - status: ACTIVE
+- creation default model: gpt-5.6-sol
+- creation default reasoning effort: medium
 - prompt:
 In ${repoRoot}, run the repo-local weekly agent memory review for today's local date.
 
 Use \`date +%F\` as the reconcile-window end date. Read \`.agent/skills/agent-memory-reconcile/SKILL.md\` completely and follow it as the source of truth. Report what changed or why it was skipped. Do not git commit memory changes.
+
+The root agent owns all final merge, promotion, skip, write, and verification decisions. After reading the skill and \`SCHEMA.md\` and running the local lint step, delegate only the exhaustive first-pass inventory of the latest seven Daily pages to one fresh \`gpt-5.6-luna\` subagent with \`medium\` reasoning and no inherited context. Require a compact candidate packet that accounts for every reusable candidate, preserves its Daily evidence links, and recommends merge, update, create, or skip with a reason. The root agent must not reread all seven Daily pages by default; it should selectively verify only promoted, disputed, or insufficient candidates against their Daily evidence and existing Concept targets before making the final decision. The Luna subagent must not edit the vault.
 
 After creating/updating both automations, show me their names, schedules, and status.`;
 }
@@ -575,11 +587,10 @@ Workflow:
 4. 父 agent 只负责编排。对每个日期，从旧到新顺序执行：
    - 为这个日期启动一个新的子 agent（独立线程/上下文，不是父 agent 自己继续处理），一次只处理一个日期；启动时只传 repo、日期和 skill 路径，不携带前几天的编译内容；等待它完成后再处理下一天，禁止一个子 agent 连续编译多个日期。
    - 子 agent 读取 \`.agent/skills/ai-session-wiki-ingest/SKILL.md\`，以它为唯一操作规范，并把日期参数填成当前处理的 \`YYYY-MM-DD\`。
-   - 只允许使用本次新生成的 capture，以及 capture 明确列出的 requested-date 原始 session slice。禁止广泛搜索旧 Codex / Claude 会话来找以前生成的 Daily、prompt、coverage ledger 或 patch，更不能复制或回放它们。
-   - 现有 Daily 只能在 fresh candidate 完成后用于防回退比较，不能作为新总结的证据来源。
-   - 子 agent 必须报告 evidence-card 数、覆盖的 high-signal workstreams、明确 skipped 的项、raw-session drill-down 数和输出路径。
-   - 如果某天没有 session evidence，记录 legitimate skipped，继续下一天；如果 coverage pass 或防回退检查无法完成，记录 blocked 并停止本次批处理。
-5. 只有 7 个日期都成功完成或属于 legitimate no-evidence skip 时，才执行 agent memory reconcile：
+   - 只消费 prepare 输出的 bounded packet；禁止读取完整 Capture、raw session、旧 Codex / Claude 会话、以前生成的 Daily、prompt 或 patch。
+   - 子 agent 必须报告 evidence-card 数、included / omitted turn 数、明确 skipped 原因和输出路径。
+   - 如果某天没有 session evidence 或不能安全产出，记录 skipped reason，继续下一天；不要报告 blocked。
+5. 7 个日期都完成或明确 skipped 后，执行 agent memory reconcile：
    - 为 reconcile 启动另一个新的子 agent（独立线程/上下文）。
    - 读取 \`.agent/skills/agent-memory-reconcile/SKILL.md\`，以它为唯一操作规范。
    - 使用今天作为 end date，检查最近 7 天 Daily Wiki pages；禁止搜索或回放旧 agent session 里的 reconcile 结果或 concept / behavior-rule patch。
@@ -591,7 +602,7 @@ Workflow:
 
 重要约束：
 - 上面两个 \`SKILL.md\` 是 workflow source of truth，不要用这个 prompt 覆盖它们。
-- 如果无法创建新的子 agent，停止并报告 blocker；不要退回到父 agent 的长上下文里压缩处理 7 天。
+- 如果无法创建新的子 agent，将未处理日期报告为 skipped；不要退回到父 agent 的长上下文里处理多天。
 - 不要编辑 raw JSONL logs。
 - 不要把临时 prompt 或本地配置提交到 git。
 - 不生成或更新 behavior rules。`;

@@ -68,7 +68,7 @@ bash scripts/config-ui.sh --open
 - 两级记忆：Daily Wiki 保留具体 evidence 和检索 key；Weekly Review 只把反复出现的主题沉淀成 concept / guardrail，并维护 `index.md` / `hot.md`。
 - 视觉证据：Daily capture 能从 session 中提取截图到本地 evidence inbox；图片按证据价值评分后才会进入 Wiki。关系复杂度达到门槛时自动生成或更新主题 Canvas，否则使用 Mermaid 或文字，文字总结始终是可检索的主记录。
 - 防膨胀：普通 ticket / project key 不默认晋升成长期记忆；只有稳定父级主题或长期 workstream 才沉淀成 concept。`Agent Behavior Rules` 最多 10 条。
-- 可审计：每个 Daily 「关键会话」只链接实际支持它的 capture Evidence Card，card 会标明 Codex / Claude Code 并保留原始 session 路径；只有需要 exact output 或争议审计时才继续打开 raw JSONL。
+- 可审计：每个 Daily 「关键会话」展示 1-3 张代表性 capture Evidence Card；Card 保留原始 session 路径，需要审计时可沿链接反查。
 
 ## 本地配置界面
 
@@ -137,6 +137,7 @@ scripts/
   config-ui.sh                  # local config web entry
   setup.sh                      # skill setup entry
   capture-ai-chats.mjs          # deterministic evidence capture
+  daily-memory-workflow.mjs     # bounded Daily prepare and verify orchestration
   wiki-lint.mjs                 # deterministic wiki health report
 
 wiki/

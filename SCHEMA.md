@@ -3,7 +3,7 @@
 This repository follows the LLM Wiki model:
 
 ```text
-External agent sessions -> Capture inbox -> Daily backup -> Reviewed Concepts
+External agent sessions -> Canonical Capture -> Ephemeral packet -> Daily backup -> Reviewed Concepts
 ```
 
 `SCHEMA.md` is the single owner of the memory model. Skills define procedures and
@@ -22,13 +22,17 @@ wiki/
   templates/Daily AI Chat Summary Template.md
 
 .vault-meta/
-  captures/ai-chats/YYYY-MM-DD.md  # regenerable evidence inbox
+  captures/ai-chats/YYYY-MM-DD.capture.json  # regenerable machine evidence
   reviews/                         # local lint/reconcile reports
 ```
 
-Raw Codex and Claude Code session logs remain in their original locations and are
-read-only source of truth. The capture inbox is a deterministic staging file, not
-durable knowledge. Daily pages are the default evidence surface for queries.
+Raw Codex and Claude Code session logs remain in their original locations as immutable
+audit evidence. The versioned JSON Capture is the canonical normalized evidence layer
+for the Daily workflow; it preserves every meaningful turn and all captured final and
+delegated outcomes. The bounded model packet is derived from that Capture in memory and
+is never a durable layer. When the compact view exceeds 96 KiB, the packet omits
+lower-priority turns while retaining every Evidence Card's identity and source. The
+Capture remains complete. Daily pages are the default evidence surface for queries.
 
 ## Daily Wiki
 
@@ -55,22 +59,23 @@ decisions, evidence, rejected options, outcomes, and unresolved work without cop
 the full transcript.
 
 Each `###` topic under `关键会话` owns its provenance. Its first content line is
-`- 证据来源：` followed by one or more Markdown links to the exact Evidence Cards in
-the dated capture, for example:
+`- 证据来源：` followed by one to three Markdown links to representative Evidence
+Cards in the dated capture, for example:
 
 ```markdown
 ### Runtime verification
 
-- 证据来源：[Codex · codex-019f...](../../../.vault-meta/captures/ai-chats/2026-07-13.md#codex-019f...)
+- 证据来源：[Codex · codex-019f...](../../../.vault-meta/captures/ai-chats/2026-07-13.capture.json#codex-019f...)
 ```
 
 Do not put original session paths or a page-wide source list in Daily frontmatter.
-The linked capture card records its stable Evidence ID, `Agent: Codex` or
-`Agent: Claude Code`, and the original session path. This gives the audit chain
-`Daily topic -> capture Evidence Card -> original session` without making a Daily
-look as if it was compiled directly from raw JSONL. A topic may cite multiple cards
-when they materially support the same workstream, but it must not cite unrelated
-cards merely because they occurred on the same date.
+The linked JSON card records its stable Evidence ID, `agent: Codex` or
+`agent: Claude Code`, and the original session path. This gives the audit chain
+`Daily topic -> representative capture Evidence Card -> original session` for normal
+use without making a Daily look as if it was compiled directly from raw JSONL. An
+explicit audit follows the representative Capture Card to its original session. If
+more than three independent evidence chains are needed, split the topic by independent
+outcome; never cite unrelated cards merely because they occurred on the same date.
 
 A Daily page is backup evidence, not effective reusable knowledge. Its `可复用经验`
 section contains unreviewed candidates only; query must not present them as reusable
@@ -126,10 +131,8 @@ remains canonical.
   and date-range questions may use Daily pages as historical evidence. Reusable
   guidance comes only from reviewed Concepts.
 - Query is read-only. It does not write answers back into the vault.
-- Daily may open the requested-date slice of an original session when the capture
-  reports truncated text, a missing final outcome, or conflicting high-signal
-  evidence. Query and Reconcile otherwise open original logs only for exact output,
-  disputed evidence, or an explicit audit.
+- Daily consumes only its bounded packet. For an explicit later audit, Query or
+  Reconcile may inspect a linked Capture Card before opening the original session log.
 
 Only `engineering-memory-loader` is exposed globally. Daily and reconcile remain
 repo-local workflows invoked by manual or scheduled runs. Scheduling is external;

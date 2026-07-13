@@ -25,8 +25,9 @@ and ticket ids in English. This workflow is periodic maintenance, not a weekly r
    `.vault-meta/reviews/Agent Memory Reconcile Reviews.md` and an operation entry to
    `wiki/log.md`.
 
-Escalate to original sessions only when a decision depends on disputed or insufficient
-Daily evidence, and record why.
+When a decision depends on disputed or insufficient Daily evidence, inspect only the
+relevant linked Capture Cards first. Escalate to original sessions only when that
+targeted evidence remains insufficient, and record why.
 
 Do not search prior Codex or Claude agent runs for a generated reconcile answer,
 concept/rule patch, or earlier promotion decision. Never replay one as the current

@@ -33,6 +33,7 @@ required_files=(
   scripts/config-server.mjs
   scripts/config-ui.sh
   scripts/capture-ai-chats.mjs
+  scripts/daily-memory-workflow.mjs
   scripts/install-claude-obsidian.sh
   scripts/install-resources.sh
 )

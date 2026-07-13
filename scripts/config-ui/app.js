@@ -65,7 +65,7 @@ const i18n = {
     "metric.concepts": "概念",
     "flow.title": "Wiki 结构和流程",
     "flow.sourceTitle": "01 Source Logs",
-    "flow.sourceBody": "原始会话日志留在本机原位置，daily loop 先生成本地 capture inbox，再写 Daily Wiki。",
+    "flow.sourceBody": "原始会话日志留在本机原位置；daily loop 生成唯一的机器 Capture，再从临时 packet 写 Daily Wiki。",
     "flow.dailyTitle": "02 Daily Wiki",
     "flow.dailyBody": "给人和 agent 看的每日中文 wiki；每个关键会话精确链接到 capture Evidence Card。",
     "flow.conceptsTitle": "03 Concepts & Rules",
@@ -255,7 +255,7 @@ const i18n = {
     "metric.setup": "Setup",
     "metric.concepts": "Concepts",
     "flow.title": "Wiki Structure & Flow",
-    "flow.sourceBody": "Raw session logs stay in place; the daily loop writes a local capture inbox before the Daily Wiki page.",
+    "flow.sourceBody": "Raw session logs stay in place; the daily loop writes one machine Capture, then derives an ephemeral packet for the Daily Wiki.",
     "flow.dailyBody": "Daily Chinese wiki pages for humans and agents; every key topic links its exact capture Evidence Cards.",
     "flow.conceptsBody": "Daily is backup only; weekly review promotes valuable reusable knowledge into concepts and does not generate behavior rules.",
     "flow.skillBody": "Business repos load this query skill on demand to find history and avoid known traps.",
@@ -676,9 +676,14 @@ function renderAutomation(status) {
   const codexLine = (entry) => {
     if (!entry?.found) return t("status.notInstalled");
     const status = String(entry.status || "unknown").toUpperCase();
-    if (status === "ACTIVE") return t("status.active");
-    if (status === "PAUSED") return t("status.paused");
-    return status.toLowerCase();
+    const state = status === "ACTIVE"
+      ? t("status.active")
+      : (status === "PAUSED" ? t("status.paused") : status.toLowerCase());
+    const settings = [
+      entry.model ? `model ${entry.model}` : "",
+      entry.reasoningEffort ? `reasoning ${entry.reasoningEffort}` : "",
+    ].filter(Boolean);
+    return [state, ...settings].join(" · ");
   };
   $("dailyCodexMetric").textContent = codexLine(codexApp.daily);
   $("weeklyCodexMetric").textContent = codexLine(codexApp.weekly);

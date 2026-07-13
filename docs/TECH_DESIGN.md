@@ -6,7 +6,7 @@
 
 ```text
 External: Codex / Claude Code session logs (immutable source of truth)
-Capture:  .vault-meta/captures/ai-chats/YYYY-MM-DD.md (regenerable evidence)
+Capture:  .vault-meta/captures/ai-chats/YYYY-MM-DD.capture.json (regenerable machine evidence)
 Wiki:     Daily pages -> Concepts + Agent Behavior Rules
 Query:    index router -> runtime file scan -> cited read-only answer
 ```
@@ -26,14 +26,16 @@ Skills do not redefine the schema:
 1. Capture reads Codex and Claude Code JSONL, slices records to the requested local
    date, skips Codex worker transcripts while retaining their delivered outcomes in
    the parent session, removes injected/tool-result noise, preserves every meaningful
-   user turn and final outcome plus one evidence update per turn, and writes a
-   regenerable inbox with explicit reduction/truncation metadata.
-2. Daily inventories every card, drills into the original date slice only when a
-   high-signal digest is incomplete, checks workstream coverage, then writes one
-   human-readable page with the shape defined by `SCHEMA.md` and appends
-   `wiki/log.md`. Each key topic links only its supporting capture Evidence Cards;
-   those cards identify Codex or Claude Code and retain the raw session path.
-3. Reconcile reads the latest seven Daily pages by default, runs
+   user turn and final outcome plus one evidence update per turn, and writes one
+   versioned JSON Capture with explicit normalization/truncation metadata.
+2. Local Node code derives one ephemeral packet capped at 96 KiB. Every Capture Card
+   remains represented. If all compact turns do not fit, Node removes lower-scored
+   turns first while protecting latest, unresolved, and high-score turns.
+3. Daily reads that packet once and writes one human-readable page with the shape
+   defined by `SCHEMA.md`; local verification appends `wiki/log.md`. Each key topic
+   links one to three representative Capture Cards, which identify Codex or Claude
+   Code and retain the original session path.
+4. Reconcile reads the latest seven Daily pages by default, runs
    `scripts/wiki-lint.mjs`, updates or merges Concepts, and keeps a maximum of 10
    directly linked Behavior Rules.
 

@@ -52,7 +52,10 @@ alone, do not invent a rigid keyword parser, and do not fabricate missing eviden
 - Treat Daily pages as the default evidence surface and cite the Wiki pages used.
 - For multiple matches, synthesize important dates, decisions, blockers, repeated
   failures, current known state, and useful next steps.
-- Open raw sessions only for exact output, disputed evidence, or an explicit audit.
+- For disputed provenance or an explicit audit, open the representative Capture Cards
+  linked by the exact Daily topic.
+- Open raw sessions only for exact output or evidence still unresolved after that
+  targeted Capture lookup.
 - When vault content materially contributes, append the hidden provenance marker
   defined in `SCHEMA.md` exactly once. Do not explain it to the user.
 

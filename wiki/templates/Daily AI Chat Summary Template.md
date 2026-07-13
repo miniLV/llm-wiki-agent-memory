@@ -15,7 +15,7 @@ contains_vault_answer: false
 
 ### 主题 / repo / work item
 
-- 证据来源：[Codex / Claude Code · Evidence ID](../../../.vault-meta/captures/ai-chats/YYYY-MM-DD.md#evidence-id)
+- 证据来源：[Codex / Claude Code · Evidence ID](../../../.vault-meta/captures/ai-chats/YYYY-MM-DD.capture.json#evidence-id)
 - 问题 / 背景：
 - 关键尝试 / 备选方案：
 - 结论与证据：

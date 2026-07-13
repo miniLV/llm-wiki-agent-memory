@@ -25,7 +25,9 @@ if command -v lsof >/dev/null 2>&1; then
   listener_pid="$(lsof -tiTCP:"${port}" -sTCP:LISTEN 2>/dev/null | head -n 1 || true)"
   if [[ -n "$listener_pid" ]]; then
     listener_command="$(ps -p "$listener_pid" -o command= 2>/dev/null || true)"
-    if [[ "$listener_command" == *"${repo_root}/scripts/config-server.mjs"* ]]; then
+    listener_cwd="$(lsof -a -p "$listener_pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1 || true)"
+    if [[ "$listener_command" == *"${repo_root}/scripts/config-server.mjs"* ||
+          ( "$listener_cwd" == "$repo_root" && "$listener_command" == *"scripts/config-server.mjs"* ) ]]; then
       echo "Agent Memory Control is already running at ${url}; reusing it."
       if [[ " $* " == *" --open "* ]]; then
         if command -v open >/dev/null 2>&1; then
