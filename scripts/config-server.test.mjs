@@ -10,6 +10,11 @@ import test from "node:test";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const serverSource = path.join(repoRoot, "scripts", "config-server.mjs");
 
+test("Obsidian Skills open action uses the configured install directory", () => {
+  const source = fs.readFileSync(serverSource, "utf8");
+  assert.match(source, /open-detected-obsidian-skills[\s\S]*?openPathCommand\(config\.obsidianSkillsDir/);
+});
+
 function freePort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer();

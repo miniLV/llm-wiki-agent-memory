@@ -662,7 +662,7 @@ function runCommand(action, config, options = {}) {
   } else if (action === "open-obsidian-skills-github") {
     commandArgs = openUrlCommand(config.obsidianSkillsRepo || "https://github.com/kepano/obsidian-skills");
   } else if (action === "open-detected-obsidian-skills") {
-    commandArgs = openPathCommand(path.join(os.homedir(), ".codex", "skills"));
+    commandArgs = openPathCommand(config.obsidianSkillsDir || path.join(repoRoot, ".agent", "external", "obsidian-skills"));
   } else if (action === "open-claude-obsidian-github") {
     commandArgs = openUrlCommand(config.claudeObsidianRepo || defaultRepo);
   } else if (action === "open-detected-claude-obsidian") {
