@@ -91,7 +91,7 @@ bash scripts/config-ui.sh --open
 - **自动维护**：让 Codex App Automations 定时运行 daily / weekly memory loop，日常不用手动修改 `.vault-meta/` 或 `wiki/sources/`。
 - **手动整理最近 7 天**：在本地配置页的 **最近一周** 卡片点击 **复制提示词并打开 Codex**，粘贴并发送。Codex 会按最近 7 天逐日运行 daily workflow，最后执行 weekly lint / merge / promote。
 
-![LLM Wiki Agent Memory 整理最近一周](docs/assets/recent-week-config-ui.jpg)
+![LLM Wiki Agent Memory 整理最近一周](docs/assets/recent-week-config-ui.png)
 
 整理完成后，在任意业务 repo 里直接问 Codex：
 
