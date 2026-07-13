@@ -86,9 +86,14 @@ bash scripts/config-ui.sh --open
 
 ## 平时怎么用
 
-配置好之后，日常基本不用手动碰 `.vault-meta/` 或 `wiki/sources/`。让 Codex App Automations 定时跑 daily / weekly loop；需要整理最近一周时，也可以在本地配置页复制 prompt 手动跑一次。
+配置好后有两种运行方式：
 
-之后在任意业务 repo 里直接问 Codex：
+- **自动维护**：让 Codex App Automations 定时运行 daily / weekly memory loop，日常不用手动修改 `.vault-meta/` 或 `wiki/sources/`。
+- **手动整理最近 7 天**：在本地配置页的 **最近一周** 卡片点击 **复制提示词并打开 Codex**，粘贴并发送。Codex 会按最近 7 天逐日运行 daily workflow，最后执行 weekly lint / merge / promote。
+
+![LLM Wiki Agent Memory 整理最近一周](docs/assets/recent-week-config-ui.jpg)
+
+整理完成后，在任意业务 repo 里直接问 Codex：
 
 ```text
 帮我查一下最近一周主要做了什么
@@ -96,7 +101,9 @@ bash scripts/config-ui.sh --open
 我改了源码，但浏览器还是旧行为，帮我按历史经验排查一下
 ```
 
-Codex 会通过 `engineering-memory-loader` 读取本地 wiki，优先看 `wiki/hot.md` / `wiki/index.md`，再按 key 搜索 Daily Wiki 和 concepts，最后综合成一个答案。
+Codex 会通过 `engineering-memory-loader` 读取本地 wiki，优先看 `wiki/hot.md` / `wiki/index.md`，再按 key 搜索 Daily Wiki 和 concepts，最后返回日期、结论和证据；没有记录时会明确返回 `NO_MATCH`。
+
+![LLM Wiki Agent Memory 在 Codex 中的查询示例](docs/assets/codex-engineering-memory-example.png)
 
 ## 当前支持范围
 
