@@ -9,10 +9,12 @@ import test from "node:test";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const serverSource = path.join(repoRoot, "scripts", "config-server.mjs");
+const appSource = path.join(repoRoot, "scripts", "config-ui", "app.js");
 
-test("Obsidian Skills open action uses the configured install directory", () => {
+test("open actions use configured paths without the full config workflow", () => {
   const source = fs.readFileSync(serverSource, "utf8");
   assert.match(source, /open-detected-obsidian-skills[\s\S]*?openPathCommand\(config\.obsidianSkillsDir/);
+  assert.match(fs.readFileSync(appSource, "utf8"), /runActionOnly\(button\.dataset\.openAction\)/);
 });
 
 function freePort() {
@@ -105,7 +107,12 @@ test("config server copies UTF-8 prompts when launchd provides no locale", async
   ].join("\n"));
   fs.chmodSync(fakePbcopy, 0o755);
   const fakeOpen = path.join(binDir, "open");
-  fs.writeFileSync(fakeOpen, "#!/bin/sh\nexit 0\n");
+  fs.writeFileSync(fakeOpen, [
+    "#!/bin/sh",
+    'if [ "$1" = "-a" ] && [ "$2" = "Finder" ]; then sleep 1; fi',
+    "exit 0",
+    "",
+  ].join("\n"));
   fs.chmodSync(fakeOpen, 0o755);
   const bashEnv = path.join(root, "bash-env.sh");
   fs.writeFileSync(bashEnv, `export PATH="${binDir}:/usr/bin:/bin"\n`);
@@ -160,4 +167,15 @@ test("config server copies UTF-8 prompts when launchd provides no locale", async
   const automationPrompt = fs.readFileSync(clipboardOutput, "utf8");
   assert.match(automationPrompt, /Read `\.agent\/skills\/ai-session-wiki-ingest\/SKILL\.md` completely and follow it as the source of truth/);
   assert.match(automationPrompt, /Read `\.agent\/skills\/agent-memory-reconcile\/SKILL\.md` completely and follow it as the source of truth/);
+
+  const openStartedAt = Date.now();
+  const openResponse = await fetch(`http://127.0.0.1:${port}/api/run`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "open-vault", config: {} }),
+  });
+  const openResult = await openResponse.json();
+  assert.equal(openResult.code, 0);
+  assert.equal(Object.hasOwn(openResult, "status"), false);
+  assert.ok(Date.now() - openStartedAt < 750, "open action waited for Finder");
 });

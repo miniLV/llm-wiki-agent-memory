@@ -483,7 +483,7 @@ function openPathCommand(target) {
     '  while [ "$fallback" != "/" ] && [ ! -d "$fallback" ]; do fallback="$(dirname "$fallback")"; done',
     '  echo "Path does not exist: $target" >&2',
     '  if [ -d "$fallback" ] && command -v open >/dev/null 2>&1; then',
-    '    open -a Finder "$fallback"',
+    '    open -a Finder "$fallback" >/dev/null 2>&1 &',
     '    echo "Opened nearest existing directory: $fallback"',
     '  else',
     '    echo "No existing parent directory found." >&2',
@@ -491,7 +491,7 @@ function openPathCommand(target) {
     '  exit 1',
     'fi',
     'if command -v open >/dev/null 2>&1; then',
-    '  if [ -d "$target" ]; then open -a Finder "$target"; else open -R "$target"; fi',
+    '  if [ -d "$target" ]; then open -a Finder "$target" >/dev/null 2>&1 & else open -R "$target" >/dev/null 2>&1 & fi',
     'else',
     '  echo "$target"',
     'fi',
@@ -790,7 +790,7 @@ const server = http.createServer(async (req, res) => {
       const body = safeJson(await readBody(req)) || {};
       const config = writeConfig(body.config || readConfig());
       const result = await runCommand(String(body.action || ""), config, body.options || {});
-      sendJson(res, 200, { ...result, status: statusPayload() });
+      sendJson(res, 200, result);
       return;
     }
     sendJson(res, 404, { error: "Not found" });

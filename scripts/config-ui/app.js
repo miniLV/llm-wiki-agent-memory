@@ -1115,7 +1115,7 @@ document.addEventListener("click", (event) => {
     openCodexLoopModal();
     return;
   }
-  run(button.dataset.openAction);
+  runActionOnly(button.dataset.openAction);
 });
 document.addEventListener("click", (event) => {
   const button = event.target.closest?.(".open-evidence[data-client-action]");
