@@ -109,6 +109,8 @@ test("daily ingest reads one persisted Evidence Snapshot and verifies locally", 
   assert.match(skill, /daily-memory-workflow\.mjs verify/);
   assert.match(skill, /Prepare output is metadata-only/);
   assert.match(skill, /never interpret `includedTurns` \/ `omittedTurns` as transfer counts/);
+  assert.match(skill, /non-overlapping chunks of at most 12,000 JavaScript string characters/);
+  assert.match(skill, /start\+12000/);
   assert.match(schema, /emits only metadata containing its path/);
   assert.match(design, /Snapshot bytes are not written to stdout/);
   assert.doesNotMatch(skill, /--emit-snapshot|--emit-packet|SYNTHESIS PACKET|lower-scored turns/i);

@@ -40,19 +40,37 @@ returns one metadata JSON line containing its path; it never emits Snapshot byte
 2. Handle the one-line status:
 
    - `ready`: read the persisted Evidence Snapshot at the reported `evidenceSnapshot`
-     path once. In Codex, give both the outer `functions.exec` call and its nested
-     `exec_command` a `max_output_tokens: 100000` allowance for this read.
+     path in non-overlapping chunks of at most 12,000 JavaScript string characters.
+     First read only the string length, then read offsets `0`, `12000`, `24000`, and so
+     on until the full file has been consumed. Give every chunk-read command enough
+     output allowance for one chunk. Never reread a chunk, summarize per chunk, or
+     split the work across agents.
+
+     ```bash
+     node -e 'const fs=require("fs"); const s=fs.readFileSync(process.argv[1],"utf8"); console.log(s.length)' SNAPSHOT_PATH
+     node -e 'const fs=require("fs"); const s=fs.readFileSync(process.argv[1],"utf8"); const start=Number(process.argv[2]); process.stdout.write(s.slice(start,start+12000))' SNAPSHOT_PATH OFFSET
+     ```
    - `skipped_no_sources`: leave the Daily unchanged and report skipped.
    - `skipped_with_reason`: leave the Daily unchanged and report its reason.
 
    Prepare output is metadata-only. Never expect Snapshot JSON after the metadata line,
    and never interpret `includedTurns` / `omittedTurns` as transfer counts; they report
-   evidence filtering. Report `skipped_with_reason: incomplete tool transfer` only when
-   the Snapshot read explicitly reports truncation, the file is missing or unreadable,
-   or its JSON is invalid. Never report a business-level blocked state.
+   evidence filtering. If the run cannot continue, report the exact stage and one of
+   these reasons instead of the generic `incomplete tool transfer`:
 
-3. Use the Snapshot read in step 2 as the only synthesis input. Do not read the
-   Snapshot again or open raw session JSONL, an existing Daily, automation memory,
+   - `prepare_failed: ...` when the prepare command itself fails;
+   - `snapshot_missing: ...` when `evidenceSnapshot` does not exist;
+   - `snapshot_unreadable: ...` when the path exists but cannot be read;
+   - `snapshot_invalid_json: ...` when the persisted file is not valid JSON;
+   - `snapshot_chunk_missing: ...` when a required offset was not read;
+   - `snapshot_read_truncated: ...` only when a chunk-read tool explicitly reports
+     output truncation.
+
+   Include the Snapshot path, `snapshotBytes` from prepare when available, and the
+   original tool error text. Never report a business-level blocked state.
+
+3. Use the complete ordered chunks from step 2 as the only synthesis input. Do not read
+   any chunk again or open raw session JSONL, an existing Daily, automation memory,
    global memory, or prior agent runs. Omitted older turns are an expected cost-control
    result, not a reason to stop.
 
@@ -97,9 +115,10 @@ returns one metadata JSON line containing its path; it never emits Snapshot byte
 
 ## Cost Boundary
 
-The normal path is exactly one prepare, one synthesis/write, and one verify. Do not
-issue separate model turns for lint, diff, status, logging, or progress narration;
-the Node helper owns those mechanical steps.
+The normal path is exactly one prepare, the minimum number of non-overlapping Snapshot
+chunk reads, one synthesis/write, and one verify. Do not issue separate model turns for
+individual chunks, lint, diff, status, logging, or progress narration; the Node helper
+owns the mechanical steps.
 
 ## Report
 
@@ -108,6 +127,8 @@ Report:
 - the date and whether the result was written or skipped;
 - Evidence Snapshot path and Evidence Card count;
 - included and omitted turn counts from prepare;
+- prepare status and Snapshot read status, including the exact failure stage and reason
+  when skipped;
 - Daily path when written;
 - verification result;
 - confirmation that no git commit was made.
