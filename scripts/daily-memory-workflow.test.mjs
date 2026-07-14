@@ -28,15 +28,12 @@ function setupRoot(prefix) {
 function parsePrepare(stdout) {
   const resultEnd = stdout.indexOf("\n");
   const resultLine = resultEnd === -1 ? stdout : stdout.slice(0, resultEnd);
-  const marker = "\n--- EVIDENCE SNAPSHOT ---\n";
-  const markerAt = stdout.indexOf(marker);
   return {
     result: JSON.parse(resultLine),
-    snapshot: markerAt === -1 ? "" : stdout.slice(markerAt + marker.length),
   };
 }
 
-test("prepare emits the persisted Evidence Snapshot bytes once and verify checks the Daily locally", () => {
+test("prepare reports the persisted Evidence Snapshot path and verify checks the Daily locally", () => {
   const { root, helper } = setupRoot("daily-memory-workflow-");
   const date = "2099-01-02";
   write(path.join(root, "scripts", "capture-ai-chats.mjs"), `
@@ -104,7 +101,7 @@ test("prepare emits the persisted Evidence Snapshot bytes once and verify checks
     encoding: "utf8",
   });
   assert.equal(prepared.status, 0, prepared.stderr);
-  const { result, snapshot } = parsePrepare(prepared.stdout);
+  const { result } = parsePrepare(prepared.stdout);
   const persistedSnapshot = fs.readFileSync(path.join(root, ".vault-meta", "captures", "ai-chats", `${date}.capture.json`), "utf8");
   assert.equal(result.status, "ready");
   assert.equal(result.evidenceCards, 2);
@@ -113,16 +110,16 @@ test("prepare emits the persisted Evidence Snapshot bytes once and verify checks
   assert.equal(result.omittedTurns, 0);
   assert.equal(result.snapshotMode, "all-turns");
   assert.equal(result.snapshotPersisted, true);
+  assert.equal(result.evidenceSnapshot, `.vault-meta/captures/ai-chats/${date}.capture.json`);
   assert.equal("snapshotLimitBytes" in result, false);
   assert.equal(result.snapshotBytes, Buffer.byteLength(persistedSnapshot));
-  assert.equal(snapshot, persistedSnapshot);
-  assert.equal(prepared.stdout.split("--- EVIDENCE SNAPSHOT ---").length - 1, 1);
-  assert.match(snapshot, /codex-test-1/);
-  assert.match(snapshot, /claude-test-2/);
-  assert.match(snapshot, /GOAL_END_SENTINEL/);
-  assert.match(snapshot, /OUTCOME_END_SENTINEL/);
-  assert.match(snapshot, /Carryover deployment completed/);
-  assert.doesNotMatch(snapshot, /\[truncated\]|field compacted locally/);
+  assert.doesNotMatch(prepared.stdout, /EVIDENCE SNAPSHOT/);
+  assert.match(persistedSnapshot, /codex-test-1/);
+  assert.match(persistedSnapshot, /claude-test-2/);
+  assert.match(persistedSnapshot, /GOAL_END_SENTINEL/);
+  assert.match(persistedSnapshot, /OUTCOME_END_SENTINEL/);
+  assert.match(persistedSnapshot, /Carryover deployment completed/);
+  assert.doesNotMatch(persistedSnapshot, /\[truncated\]|field compacted locally/);
 
   execFileSync("git", ["init", "--quiet"], { cwd: root });
   const missing = spawnSync(process.execPath, [helper, "verify", date], { cwd: root, encoding: "utf8" });
@@ -185,7 +182,7 @@ test("prepare reports skipped when a date has no source sessions", () => {
     encoding: "utf8",
   });
   assert.equal(prepared.status, 0, prepared.stderr);
-  const { result, snapshot } = parsePrepare(prepared.stdout);
+  const { result } = parsePrepare(prepared.stdout);
   assert.equal(result.status, "skipped_no_sources");
-  assert.equal(snapshot, "");
+  assert.doesNotMatch(prepared.stdout, /EVIDENCE SNAPSHOT/);
 });

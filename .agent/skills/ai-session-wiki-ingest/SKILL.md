@@ -43,17 +43,16 @@ separate packet layer.
 
 2. Handle the one-line status:
 
-   - `ready`: consume the Evidence Snapshot that follows.
+   - `ready`: read the persisted Evidence Snapshot at the reported `evidenceSnapshot` path once.
    - `skipped_no_sources`: leave the Daily unchanged and report skipped.
    - `skipped_with_reason`: leave the Daily unchanged and report its reason.
 
-   A complete transfer contains `--- EVIDENCE SNAPSHOT ---` followed by one complete
-   JSON object with `"snapshot_kind": "bounded_daily_evidence"`. If the tool reports
-   `Warning: truncated output`, or if that JSON object is incomplete, report
-   `skipped_with_reason: incomplete tool transfer`. Never report a business-level
-   blocked state.
+   Prepare output is metadata-only. Snapshot bytes stay on disk and are read once by
+   the agent, so large sessions do not cross the exec stdout boundary. If the file is
+   missing or unreadable, report `skipped_with_reason: incomplete tool transfer`.
+   Never report a business-level blocked state.
 
-3. Use the emitted Evidence Snapshot as the only synthesis input. Do not reopen its
+3. Use the persisted Evidence Snapshot as the only synthesis input. Do not reopen its
    persisted `.capture.json`, raw session JSONL, an existing Daily, automation memory,
    global memory, or prior agent runs. Omitted older turns are an expected
    cost-control result, not a reason to stop.

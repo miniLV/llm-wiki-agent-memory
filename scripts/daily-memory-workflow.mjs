@@ -59,12 +59,6 @@ function run(command, args) {
   });
 }
 
-function writeStdout(value) {
-  return new Promise((resolve, reject) => {
-    process.stdout.write(value, (error) => error ? reject(error) : resolve());
-  });
-}
-
 function fail(label, result) {
   const detail = String(result.stderr || result.stdout || result.error?.message || "unknown error").trim();
   console.error(`${label} failed${detail ? `: ${detail.slice(-4000)}` : ""}`);
@@ -134,9 +128,6 @@ if (mode === "prepare") {
     evidenceSnapshot: relative(capturePath),
   };
   console.log(JSON.stringify(result));
-  if (emitSnapshot && status === "ready") {
-    await writeStdout(`\n--- EVIDENCE SNAPSHOT ---\n${snapshotText}`);
-  }
   process.exit(0);
 }
 

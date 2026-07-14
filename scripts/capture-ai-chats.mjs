@@ -592,6 +592,37 @@ const capture = {
   })),
 };
 
+function turnFingerprint(turn) {
+  return JSON.stringify([
+    normalizedSnippet(turn.goal),
+    (turn.outcomes || []).map((item) => normalizedSnippet(item.text)),
+    (turn.delegated_outcomes || []).map((item) => normalizedSnippet(item.text)),
+    normalizedSnippet(turn.decisive_evidence?.text),
+    normalizedSnippet(turn.latest_unresolved_state?.text),
+  ]);
+}
+
+function reduceCardTurns(card) {
+  const selected = new Set();
+  const fingerprints = new Set();
+  let latestUnresolved = -1;
+  card.turns.forEach((turn, index) => {
+    if (turn.unresolved) latestUnresolved = index;
+  });
+  card.turns.forEach((turn, index) => {
+    const hasOutcome = (turn.outcomes || []).length > 0 || (turn.delegated_outcomes || []).length > 0;
+    const hasEvidence = Boolean(turn.decisive_evidence);
+    const isLatestUnresolved = index === latestUnresolved;
+    if (!hasOutcome && !hasEvidence && !isLatestUnresolved) return;
+    const fingerprint = turnFingerprint(turn);
+    if (fingerprints.has(fingerprint)) return;
+    fingerprints.add(fingerprint);
+    selected.add(index);
+  });
+  if (selected.size === 0 && card.turns.length > 0) selected.add(card.turns.length - 1);
+  return selected;
+}
+
 function renderSnapshot(selectedTurns) {
   const totalTurns = capture.cards.reduce((count, card) => count + card.turns.length, 0);
   const includedTurns = selectedTurns.reduce((count, indexes) => count + indexes.size, 0);
@@ -623,7 +654,7 @@ function renderSnapshot(selectedTurns) {
 }
 
 function buildSnapshot() {
-  const selectedTurns = capture.cards.map((card) => new Set(card.turns.map((_, index) => index)));
+  const selectedTurns = capture.cards.map(reduceCardTurns);
   return renderSnapshot(selectedTurns);
 }
 
