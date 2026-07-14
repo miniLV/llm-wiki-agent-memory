@@ -29,12 +29,10 @@ Skills do not redefine the schema:
    the parent session, and removes injected/tool-result noise. Per turn it keeps the
    goal, final and delegated outcomes, latest unresolved state, and a representative
    high-signal intermediate update. It writes one lossy, regenerable JSON Evidence
-   Snapshot with a fixed internal budget. Every Evidence Card remains represented; if the Snapshot
-   is oversized, Node omits whole older completed turns before unresolved work while
-   retaining each card's identity, original session path, and latest turn.
+   Snapshot. Snapshot size is not a business skip condition; transport failures are
+   reported separately.
 2. `prepare --emit-snapshot` persists the Snapshot and emits those exact bytes once.
-   This is a delivery action, not another evidence layer. If protected evidence still
-   exceeds the budget, prepare skips and emits nothing.
+   This is a delivery action, not another evidence layer.
 3. Daily reads that emitted Snapshot once and writes one human-readable page with the
    shape defined by `SCHEMA.md`; local verification appends `wiki/log.md`. Each key topic
    links one to three representative Evidence Cards, which identify Codex or Claude

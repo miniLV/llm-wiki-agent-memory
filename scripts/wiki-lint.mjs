@@ -12,7 +12,6 @@ const jsonReportPath = path.join(reviewDir, "wiki-lint-latest.json");
 const strict = process.argv.includes("--strict");
 const config = JSON.parse(read(path.join(repoRoot, ".vault-meta", "config.json")) || "{}");
 const detailedDaily = config.dailySummaryDetail !== "concise";
-const snapshotLimitBytes = 96 * 1024;
 
 const dailyFields = ["date", "lookup_keys", "confidence", "contains_vault_answer"];
 const issues = [];
@@ -132,8 +131,7 @@ function snapshotEvidenceCards(text) {
     evidenceCardCount: Number(capture.evidence_card_count ?? cards.size),
     containsVaultAnswer: typeof capture.contains_vault_answer === "boolean" ? capture.contains_vault_answer : null,
     invalidDocument: capture.snapshot_kind !== "bounded_daily_evidence"
-      || !Array.isArray(capture.cards)
-      || Buffer.byteLength(text) > snapshotLimitBytes,
+      || !Array.isArray(capture.cards),
   };
 }
 

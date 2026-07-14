@@ -12,7 +12,6 @@ if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
   process.exit(1);
 }
 
-const snapshotLimitBytes = 96 * 1024;
 const memoryDerivedMarker = "<!-- llm-wiki-memory:derived -->";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputPath = process.env.LLM_WIKI_CAPTURE_OUTPUT_PATH ||
@@ -625,19 +624,7 @@ function renderSnapshot(selectedTurns) {
 
 function buildSnapshot() {
   const selectedTurns = capture.cards.map((card) => new Set(card.turns.map((_, index) => index)));
-  const candidates = capture.cards.flatMap((card, cardIndex) => card.turns.slice(0, -1).map((turn, turnIndex) => ({
-    cardIndex,
-    turnIndex,
-    unresolved: Boolean(turn.unresolved),
-  }))).sort((a, b) => Number(a.unresolved) - Number(b.unresolved) || a.turnIndex - b.turnIndex || a.cardIndex - b.cardIndex);
-  let text = renderSnapshot(selectedTurns);
-
-  for (const candidate of candidates) {
-    if (Buffer.byteLength(text) <= snapshotLimitBytes) break;
-    selectedTurns[candidate.cardIndex].delete(candidate.turnIndex);
-    text = renderSnapshot(selectedTurns);
-  }
-  return text;
+  return renderSnapshot(selectedTurns);
 }
 
 const snapshotText = buildSnapshot();

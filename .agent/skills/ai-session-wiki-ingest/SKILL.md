@@ -20,13 +20,12 @@ Node handles evidence extraction, Snapshot packing, and lint. The root agent rec
 one Snapshot and writes one summary. Do not delegate routine Daily work or split it
 into per-card model calls.
 
-The `.capture.json` is a lossy, regenerable, bounded Evidence Snapshot; the raw session
-logs remain the complete fact source. When all normalized evidence does not fit, Node
-omits whole older completed turns before unresolved work while retaining every Evidence
-Card's identity, source, and latest turn. It does not shorten individual fields to make
-them fit. `prepare --emit-snapshot` persists the Snapshot and emits those same bytes
-once. If the protected evidence still exceeds the budget, prepare skips and emits
-nothing. The emit is not a separate packet layer.
+The `.capture.json` is a lossy, regenerable Evidence Snapshot; the raw session logs
+remain the complete fact source. Priority and noise filtering control evidence density;
+Snapshot size is not a business skip condition. `prepare --emit-snapshot` persists the
+Snapshot and emits those same bytes once. If the outer tool truncates that transfer,
+report it as an incomplete transfer rather than inventing claims. The emit is not a
+separate packet layer.
 
 ## Run
 

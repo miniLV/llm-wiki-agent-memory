@@ -145,7 +145,7 @@ test("capture preserves long high-value fields without the old per-field caps", 
   assert.equal("score" in turn, false);
 });
 
-test("capture enforces one total budget by omitting whole turns", () => {
+test("capture keeps normalized turns without a size gate", () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "capture-ai-chats-budget-"));
   const fakeHome = path.join(tmp, "home");
   const sessionDir = path.join(fakeHome, ".codex", "sessions", "2099", "01", "02");
@@ -173,15 +173,13 @@ test("capture enforces one total budget by omitting whole turns", () => {
 
   const capture = runCapture({ fakeHome, output, config });
   const persisted = fs.readFileSync(output, "utf8");
-  const included = new Set(capture.cards[0].turns.map((turn) => turn.turn_number - 1));
-  assert.equal(capture.snapshot_mode, "whole-turn-trim");
-  assert.ok(capture.omitted_turns > 0);
-  assert.equal(capture.included_turns + capture.omitted_turns, 40);
-  assert.ok(Buffer.byteLength(persisted) <= 96 * 1024);
+  assert.equal(capture.snapshot_mode, "all-turns");
+  assert.equal(capture.omitted_turns, 0);
+  assert.equal(capture.included_turns, 40);
   for (let turn = 0; turn < 40; turn += 1) {
     const stamp = String(turn).padStart(2, "0");
     for (const sentinel of [`GOAL_${stamp}_BEGIN`, `GOAL_${stamp}_END`, `OUTCOME_${stamp}_BEGIN`, `OUTCOME_${stamp}_END`]) {
-      assert.equal(persisted.includes(sentinel), included.has(turn), sentinel);
+      assert.equal(persisted.includes(sentinel), true, sentinel);
     }
   }
   assert.doesNotMatch(persisted, /\[truncated\]|field compacted locally/);

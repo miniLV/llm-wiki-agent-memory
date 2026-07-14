@@ -22,7 +22,7 @@ Use it when:
 ### Architecture Highlights
 
 - Key-driven synthesis: the daily loop extracts Jira / issue / work item ids, features, repos, tools, and aliases, so inputs like `project1`, `ABC-123`, `PROJ42-987`, `AI VBG`, or `aivbg` can connect related sessions over time.
-- One bounded input: raw sessions remain the complete fact source. Each Daily run creates one regenerable bounded Evidence Snapshot and sends those same bytes to the agent once. If necessary, it omits whole older completed turns before unresolved work instead of compacting fields a second time.
+- One normalized input: raw sessions remain the complete fact source. Each Daily run creates one regenerable Evidence Snapshot and sends those same bytes to the agent once. Priority and noise filtering control density; Snapshot size does not skip a date.
 - Historical rollups: when one key matches five past sessions, the agent filters low-relevance matches and summarizes the timeline, decisions, repeated problems, current state, and next steps instead of returning five links.
 - Two-layer memory: Daily Wiki pages keep concrete evidence and lookup keys; Weekly Review promotes only recurring, reviewed topics into Concepts.
 - Anti-bloat rules: ordinary ticket / project keys are not promoted into durable memory by default. Only stable parent topics or long-running workstreams become Concepts.

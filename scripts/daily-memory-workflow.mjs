@@ -24,7 +24,6 @@ const captureDir = path.join(repoRoot, ".vault-meta", "captures", "ai-chats");
 const capturePath = path.join(captureDir, `${date}.capture.json`);
 const dailyPath = path.join(repoRoot, "wiki", "sources", "ai-chats", `${date}.md`);
 const logPath = path.join(repoRoot, "wiki", "log.md");
-const snapshotLimitBytes = 96 * 1024;
 
 function read(file) {
   return fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
@@ -117,18 +116,12 @@ if (mode === "prepare") {
   }
   const snapshotBytes = Buffer.byteLength(snapshotText);
   const noSources = capture.cards.length === 0;
-  const status = noSources
-    ? "skipped_no_sources"
-    : snapshotBytes <= snapshotLimitBytes
-      ? "ready"
-      : "skipped_with_reason";
+  const status = noSources ? "skipped_no_sources" : "ready";
   const result = {
     mode,
     date,
     status,
-    skipReason: status === "skipped_with_reason"
-      ? "Evidence Snapshot exceeds the delivery budget after whole-turn trimming"
-      : "",
+    skipReason: "",
     evidenceCards: capture.cards.length,
     containsVaultAnswer: Boolean(capture.contains_vault_answer),
     captureEndTimestamp: capture.capture_end_timestamp || null,

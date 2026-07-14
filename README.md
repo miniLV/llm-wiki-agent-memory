@@ -63,7 +63,7 @@ bash scripts/config-ui.sh --open
 <sub>上面两张图使用 [miniLV/sketchboard-diagram](https://github.com/miniLV/sketchboard-diagram) 这个 agent skill 绘制；它可以快速生成同款手绘白板风 HTML 架构图并导出 PNG。</sub>
 
 - Key-driven synthesis：Daily run 会保留 Jira / issue / work item id、feature、repo、tool 和 alias，让 `ABC-123`、`owner/repo#123`、`AI VBG`、`aivbg` 这类输入可以串起相关历史。
-- 单层有界输入：raw session 是完整事实源；Daily run 生成一份可重新生成的 bounded Evidence Snapshot，并把同一份内容一次性交给 agent。超过内部预算时优先省略较早且已完成的整个 turn，不对字段做二次截断。
+- 单层输入：raw session 是完整事实源；Daily run 生成一份可重新生成的 Evidence Snapshot，并把同一份内容一次性交给 agent。优先级和噪声过滤控制内容密度，不因 Snapshot 大小直接跳过日期。
 - 自动汇总历史：当一个 key 命中多次历史会话时，agent 会过滤低相关项，再汇总时间线、关键决策、反复问题、当前状态和下一步。
 - 两级记忆：Daily Wiki 保留具体 evidence 和检索 key；Weekly Review 只把反复出现且通过复核的主题沉淀成 Concept。
 - 防膨胀：普通 ticket / project key 不默认晋升成长期记忆；只有稳定父级主题或长期 workstream 才沉淀成 Concept。
