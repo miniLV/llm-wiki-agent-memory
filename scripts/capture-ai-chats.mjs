@@ -592,35 +592,45 @@ const capture = {
   })),
 };
 
-function turnFingerprint(turn) {
-  return JSON.stringify([
+function turnContent(turn) {
+  return [
     normalizedSnippet(turn.goal),
-    (turn.outcomes || []).map((item) => normalizedSnippet(item.text)),
-    (turn.delegated_outcomes || []).map((item) => normalizedSnippet(item.text)),
+    ...(turn.outcomes || []).map((item) => normalizedSnippet(item.text)),
+    ...(turn.delegated_outcomes || []).map((item) => normalizedSnippet(item.text)),
     normalizedSnippet(turn.decisive_evidence?.text),
     normalizedSnippet(turn.latest_unresolved_state?.text),
-  ]);
+  ].filter(Boolean).join("\n");
 }
 
 function reduceCardTurns(card) {
   const selected = new Set();
-  const fingerprints = new Set();
+  let lastCompleted = -1;
   let latestUnresolved = -1;
   card.turns.forEach((turn, index) => {
+    if ((turn.outcomes || []).length > 0 || (turn.delegated_outcomes || []).length > 0) lastCompleted = index;
     if (turn.unresolved) latestUnresolved = index;
   });
-  card.turns.forEach((turn, index) => {
-    const hasOutcome = (turn.outcomes || []).length > 0 || (turn.delegated_outcomes || []).length > 0;
-    const hasEvidence = Boolean(turn.decisive_evidence);
-    const isLatestUnresolved = index === latestUnresolved;
-    if (!hasOutcome && !hasEvidence && !isLatestUnresolved) return;
-    const fingerprint = turnFingerprint(turn);
-    if (fingerprints.has(fingerprint)) return;
-    fingerprints.add(fingerprint);
-    selected.add(index);
-  });
+  if (lastCompleted >= 0) selected.add(lastCompleted);
+  if (latestUnresolved >= 0) selected.add(latestUnresolved);
   if (selected.size === 0 && card.turns.length > 0) selected.add(card.turns.length - 1);
   return selected;
+}
+
+function dedupeSelectedTurns(selectedTurns) {
+  const candidates = capture.cards.flatMap((card, cardIndex) => [...selectedTurns[cardIndex]].map((turnIndex) => ({
+    cardIndex,
+    turnIndex,
+    content: turnContent(card.turns[turnIndex]),
+  })));
+  candidates.sort((a, b) => b.content.length - a.content.length || b.turnIndex - a.turnIndex);
+  const kept = [];
+  const deduped = capture.cards.map(() => new Set());
+  for (const candidate of candidates) {
+    if (candidate.content && kept.some((content) => content === candidate.content || content.includes(candidate.content))) continue;
+    kept.push(candidate.content);
+    deduped[candidate.cardIndex].add(candidate.turnIndex);
+  }
+  return deduped;
 }
 
 function renderSnapshot(selectedTurns) {
@@ -654,7 +664,7 @@ function renderSnapshot(selectedTurns) {
 }
 
 function buildSnapshot() {
-  const selectedTurns = capture.cards.map(reduceCardTurns);
+  const selectedTurns = dedupeSelectedTurns(capture.cards.map(reduceCardTurns));
   return renderSnapshot(selectedTurns);
 }
 

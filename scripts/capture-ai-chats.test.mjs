@@ -145,7 +145,7 @@ test("capture preserves long high-value fields without the old per-field caps", 
   assert.equal("score" in turn, false);
 });
 
-test("capture keeps normalized turns without a size gate", () => {
+test("capture keeps only the final completed turn without a size gate", () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "capture-ai-chats-budget-"));
   const fakeHome = path.join(tmp, "home");
   const sessionDir = path.join(fakeHome, ".codex", "sessions", "2099", "01", "02");
@@ -173,16 +173,35 @@ test("capture keeps normalized turns without a size gate", () => {
 
   const capture = runCapture({ fakeHome, output, config });
   const persisted = fs.readFileSync(output, "utf8");
-  assert.equal(capture.snapshot_mode, "all-turns");
-  assert.equal(capture.omitted_turns, 0);
-  assert.equal(capture.included_turns, 40);
-  for (let turn = 0; turn < 40; turn += 1) {
-    const stamp = String(turn).padStart(2, "0");
-    for (const sentinel of [`GOAL_${stamp}_BEGIN`, `GOAL_${stamp}_END`, `OUTCOME_${stamp}_BEGIN`, `OUTCOME_${stamp}_END`]) {
-      assert.equal(persisted.includes(sentinel), true, sentinel);
-    }
-  }
+  assert.equal(capture.snapshot_mode, "whole-turn-trim");
+  assert.equal(capture.omitted_turns, 39);
+  assert.equal(capture.included_turns, 1);
+  assert.doesNotMatch(persisted, /GOAL_00_BEGIN|OUTCOME_00_BEGIN/);
+  assert.match(persisted, /GOAL_39_BEGIN/);
+  assert.match(persisted, /OUTCOME_39_BEGIN/);
   assert.doesNotMatch(persisted, /\[truncated\]|field compacted locally/);
+});
+
+test("capture globally removes selected turns contained by stronger evidence", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "capture-ai-chats-dedupe-"));
+  const fakeHome = path.join(tmp, "home");
+  const sessionDir = path.join(fakeHome, ".codex", "sessions", "2099", "01", "02");
+  const output = path.join(tmp, "2099-01-02.capture.json");
+  const config = path.join(tmp, "config.json");
+  fs.mkdirSync(sessionDir, { recursive: true });
+  fs.writeFileSync(config, JSON.stringify({ codexSourcesEnabled: true, claudeSourcesEnabled: false }));
+  const session = (outcome) => [
+    { timestamp: "2099-01-02T01:00:00Z", role: "user", cwd: "/tmp/project", content: "Investigate build failure" },
+    { timestamp: "2099-01-02T01:01:00Z", role: "assistant", phase: "final_answer", content: outcome },
+  ].map(JSON.stringify).join("\n") + "\n";
+  fs.writeFileSync(path.join(sessionDir, "short.jsonl"), session("Root cause fixed"));
+  fs.writeFileSync(path.join(sessionDir, "long.jsonl"), session("Root cause fixed and verified"));
+
+  const capture = runCapture({ fakeHome, output, config });
+  assert.equal(capture.included_turns, 1);
+  assert.equal(capture.omitted_turns, 1);
+  assert.match(captureText(capture), /Root cause fixed and verified/);
+  assert.doesNotMatch(captureText(capture), /"text":"Root cause fixed"/);
 });
 
 test("capture keeps automation requests and skips structured Codex subagent sessions", () => {
