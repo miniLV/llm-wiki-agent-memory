@@ -569,7 +569,7 @@ Workflow:
 4. 父 agent 只负责编排。对每个日期，从旧到新顺序执行：
    - 为这个日期启动一个新的子 agent（独立线程/上下文，不是父 agent 自己继续处理），一次只处理一个日期；启动时只传 repo、日期和 skill 路径，不携带前几天的编译内容；等待它完成后再处理下一天，禁止一个子 agent 连续编译多个日期。
    - 子 agent 读取 \`.agent/skills/ai-session-wiki-ingest/SKILL.md\`，以它为唯一操作规范，并把日期参数填成当前处理的 \`YYYY-MM-DD\`。
-   - 只消费 \`prepare --emit-snapshot\` 一次输出的 bounded Evidence Snapshot；禁止回读已落盘 Snapshot、raw session、旧 Codex / Claude 会话、以前生成的 Daily、prompt 或 patch。
+   - 严格按 skill 的 metadata → persisted Snapshot 路径读取一次；禁止回读 raw session、旧 Codex / Claude 会话、以前生成的 Daily、prompt 或 patch。included / omitted 是证据筛选统计，不是传输数量。
    - 子 agent 必须报告 Evidence Snapshot 路径、evidence-card 数、included / omitted turn 数、明确 skipped 原因和输出路径。
    - 如果某天没有 session evidence 或不能安全产出，记录 skipped reason，继续下一天；不要报告 blocked。
 5. 7 个日期都完成或明确 skipped 后，执行 agent memory reconcile：

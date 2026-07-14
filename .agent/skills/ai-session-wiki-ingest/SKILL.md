@@ -22,40 +22,39 @@ into per-card model calls.
 
 The `.capture.json` is a lossy, regenerable Evidence Snapshot; the raw session logs
 remain the complete fact source. Priority and noise filtering control evidence density;
-Snapshot size is not a business skip condition. `prepare --emit-snapshot` persists the
-Snapshot and emits those same bytes once. If the outer tool truncates that transfer,
-report it as an incomplete transfer rather than inventing claims. The emit is not a
-separate packet layer.
+Snapshot size is not a business skip condition. `prepare` persists the Snapshot and
+returns one metadata JSON line containing its path; it never emits Snapshot bytes.
 
 ## Run
 
 1. As the first tool command after reading this skill, run:
 
    ```bash
-   node scripts/daily-memory-workflow.mjs prepare YYYY-MM-DD --emit-snapshot
+   node scripts/daily-memory-workflow.mjs prepare YYYY-MM-DD
    ```
 
-   Run it once with a 30-second blocking wait. In Codex, give both the outer
-   `functions.exec` call and its nested `exec_command` a
-   `max_output_tokens: 100000` allowance. If the tool still reports `running`, wait
-   once. Never poll or rerun prepare. Do not inspect the helper source; this skill and
-   the helper output are the complete run contract.
+   Run it once with a 30-second blocking wait. If the tool still reports `running`,
+   wait once. Never poll or rerun prepare. Do not inspect the helper source; this skill
+   and the helper output are the complete run contract.
 
 2. Handle the one-line status:
 
-   - `ready`: read the persisted Evidence Snapshot at the reported `evidenceSnapshot` path once.
+   - `ready`: read the persisted Evidence Snapshot at the reported `evidenceSnapshot`
+     path once. In Codex, give both the outer `functions.exec` call and its nested
+     `exec_command` a `max_output_tokens: 100000` allowance for this read.
    - `skipped_no_sources`: leave the Daily unchanged and report skipped.
    - `skipped_with_reason`: leave the Daily unchanged and report its reason.
 
-   Prepare output is metadata-only. Snapshot bytes stay on disk and are read once by
-   the agent, so large sessions do not cross the exec stdout boundary. If the file is
-   missing or unreadable, report `skipped_with_reason: incomplete tool transfer`.
-   Never report a business-level blocked state.
+   Prepare output is metadata-only. Never expect Snapshot JSON after the metadata line,
+   and never interpret `includedTurns` / `omittedTurns` as transfer counts; they report
+   evidence filtering. Report `skipped_with_reason: incomplete tool transfer` only when
+   the Snapshot read explicitly reports truncation, the file is missing or unreadable,
+   or its JSON is invalid. Never report a business-level blocked state.
 
-3. Use the persisted Evidence Snapshot as the only synthesis input. Do not reopen its
-   persisted `.capture.json`, raw session JSONL, an existing Daily, automation memory,
-   global memory, or prior agent runs. Omitted older turns are an expected
-   cost-control result, not a reason to stop.
+3. Use the Snapshot read in step 2 as the only synthesis input. Do not read the
+   Snapshot again or open raw session JSONL, an existing Daily, automation memory,
+   global memory, or prior agent runs. Omitted older turns are an expected cost-control
+   result, not a reason to stop.
 
 4. In one synthesis pass, write exactly
    `wiki/sources/ai-chats/YYYY-MM-DD.md` using the schema and template included in the

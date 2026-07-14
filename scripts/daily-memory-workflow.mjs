@@ -8,15 +8,14 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const [mode, date, ...options] = process.argv.slice(2);
-const emitSnapshot = mode === "prepare" && options.length === 1 && options[0] === "--emit-snapshot";
 const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date || "");
 const validInvocation = validDate && (
-  (mode === "prepare" && (options.length === 0 || emitSnapshot))
+  (mode === "prepare" && options.length === 0)
   || (mode === "verify" && options.length === 0)
 );
 
 if (!validInvocation) {
-  console.error("Usage: node scripts/daily-memory-workflow.mjs prepare YYYY-MM-DD [--emit-snapshot] | verify YYYY-MM-DD");
+  console.error("Usage: node scripts/daily-memory-workflow.mjs prepare YYYY-MM-DD | verify YYYY-MM-DD");
   process.exit(1);
 }
 

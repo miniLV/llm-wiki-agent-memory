@@ -96,7 +96,7 @@ test("prepare reports the persisted Evidence Snapshot path and verify checks the
     fs.writeFileSync(file, JSON.stringify({ issues: [] }));
   `);
 
-  const prepared = spawnSync(process.execPath, [helper, "prepare", date, "--emit-snapshot"], {
+  const prepared = spawnSync(process.execPath, [helper, "prepare", date], {
     cwd: root,
     encoding: "utf8",
   });
@@ -120,6 +120,13 @@ test("prepare reports the persisted Evidence Snapshot path and verify checks the
   assert.match(persistedSnapshot, /OUTCOME_END_SENTINEL/);
   assert.match(persistedSnapshot, /Carryover deployment completed/);
   assert.doesNotMatch(persistedSnapshot, /\[truncated\]|field compacted locally/);
+
+  const obsoleteEmit = spawnSync(process.execPath, [helper, "prepare", date, "--emit-snapshot"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.equal(obsoleteEmit.status, 1);
+  assert.match(obsoleteEmit.stderr, /Usage:/);
 
   execFileSync("git", ["init", "--quiet"], { cwd: root });
   const missing = spawnSync(process.execPath, [helper, "verify", date], { cwd: root, encoding: "utf8" });
@@ -177,7 +184,7 @@ test("prepare reports skipped when a date has no source sessions", () => {
     }));
   `);
 
-  const prepared = spawnSync(process.execPath, [helper, "prepare", date, "--emit-snapshot"], {
+  const prepared = spawnSync(process.execPath, [helper, "prepare", date], {
     cwd: root,
     encoding: "utf8",
   });

@@ -30,11 +30,11 @@ Raw Codex and Claude Code session logs remain in their original locations as the
 complete immutable fact source. The `.capture.json` file is a lossy, regenerable
 Evidence Snapshot for one Daily run. It normalizes high-value
 evidence: goals, final and delegated outcomes, latest unresolved state, and a
- representative high-signal intermediate update. The raw session remains the complete
-fact source; the Snapshot is the single normalized view sent to the model. `prepare
---emit-snapshot` writes this Snapshot to disk and then emits those exact bytes once;
-the emit is a delivery action, not a second packet or memory layer. Snapshot size does
-not skip a date; transport failures are reported separately.
+representative high-signal intermediate update. The raw session remains the complete
+fact source; the Snapshot is the single normalized view sent to the model. `prepare`
+writes this Snapshot to disk and emits only metadata containing its path. The agent
+reads that persisted Snapshot once for synthesis. Snapshot size does not skip a date;
+transport failures are reported separately.
 Daily pages are the default evidence surface for queries.
 
 ## Daily Wiki

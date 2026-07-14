@@ -101,11 +101,18 @@ test("schema owns the provenance marker and loader reads the schema", () => {
   assert.match(loader, /Daily `可复用经验` candidate as effective guidance/i);
 });
 
-test("daily ingest emits one persisted Evidence Snapshot and verifies locally", () => {
+test("daily ingest reads one persisted Evidence Snapshot and verifies locally", () => {
   const skill = fs.readFileSync(path.join(repoRoot, ".agent", "skills", "ai-session-wiki-ingest", "SKILL.md"), "utf8");
-  assert.match(skill, /daily-memory-workflow\.mjs prepare YYYY-MM-DD --emit-snapshot/);
+  const schema = fs.readFileSync(path.join(repoRoot, "SCHEMA.md"), "utf8");
+  const design = fs.readFileSync(path.join(repoRoot, "docs", "TECH_DESIGN.md"), "utf8");
+  assert.match(skill, /daily-memory-workflow\.mjs prepare YYYY-MM-DD/);
   assert.match(skill, /daily-memory-workflow\.mjs verify/);
-  assert.doesNotMatch(skill, /--emit-packet|SYNTHESIS PACKET|lower-scored turns/i);
+  assert.match(skill, /Prepare output is metadata-only/);
+  assert.match(skill, /never interpret `includedTurns` \/ `omittedTurns` as transfer counts/);
+  assert.match(schema, /emits only metadata containing its path/);
+  assert.match(design, /Snapshot bytes are not written to stdout/);
+  assert.doesNotMatch(skill, /--emit-snapshot|--emit-packet|SYNTHESIS PACKET|lower-scored turns/i);
+  assert.doesNotMatch(`${schema}\n${design}`, /emits those exact bytes|prepare --emit-snapshot/i);
 });
 
 test("reconcile recomputes the current window instead of replaying old output", () => {
