@@ -523,46 +523,28 @@ function codexAutomationInstallPrompt(config) {
     "7": "Sunday",
   };
   const weeklyDay = weekdayNames[String(config.weeklyAutoDay)] || "Friday";
-  return `Create or update Codex App Automations for this local agent memory vault.
+  return `Create or update these two Codex App Automations for ${repoRoot}.
 
-Repo:
-${repoRoot}
-
-Schedule:
-- Daily loop: every day at ${config.dailyAutoTime} (${timezone})
-- Weekly loop: every ${weeklyDay} at ${config.weeklyAutoTime} (${timezone})
-
-Important:
 - Use Codex App Automations as the only scheduled runner.
 - Prefer updating existing automations with these names or ids instead of creating duplicates.
-- When an automation already exists, preserve its current model and reasoning effort exactly; do not reset either setting to the creation defaults below.
-- Apply the model and reasoning defaults below only when creating a missing automation.
-- Run both automations in the local execution environment with cwd ${repoRoot}.
-- Do not git commit memory changes from these automation runs.
+- Both must be cron, ACTIVE, local execution, with cwd ${repoRoot}.
+- Preserve the current model and reasoning effort when updating; apply the listed defaults only when creating.
 
-Create/update automation 1:
+Daily:
 - id/name: llm-wiki-agent-memory-daily / LLM Wiki Agent Memory - Daily
-- kind: cron
-- status: ACTIVE
+- schedule: every day at ${config.dailyAutoTime} (${timezone})
 - creation default model: gpt-5.6-luna
 - creation default reasoning effort: medium
 - prompt:
-In ${repoRoot}, run the repo-local daily agent memory workflow for today's local date.
+Use \`date +%F\`, then read \`.agent/skills/ai-session-wiki-ingest/SKILL.md\` completely and follow it as the sole workflow source of truth. Report the result. Do not git commit memory changes.
 
-Use \`date +%F\` for the date. Read \`.agent/skills/ai-session-wiki-ingest/SKILL.md\` completely and follow it as the source of truth. Report what changed or why it was skipped. Do not git commit memory changes. Do not read or update automation memory files for this Daily run.
-
-Create/update automation 2:
+Weekly:
 - id/name: llm-wiki-agent-memory-weekly / LLM Wiki Agent Memory - Weekly
-- kind: cron
-- status: ACTIVE
+- schedule: every ${weeklyDay} at ${config.weeklyAutoTime} (${timezone})
 - creation default model: gpt-5.6-sol
 - creation default reasoning effort: medium
 - prompt:
-In ${repoRoot}, run the repo-local weekly agent memory review for today's local date.
-
-Use \`date +%F\` as the reconcile-window end date. Read \`.agent/skills/agent-memory-reconcile/SKILL.md\` completely and follow it as the source of truth. Report what changed or why it was skipped. Do not git commit memory changes.
-
-The root agent owns all final merge, promotion, skip, write, and verification decisions. After reading the skill and \`SCHEMA.md\` and running the local lint step, delegate only the exhaustive first-pass inventory of the latest seven Daily pages to one fresh \`gpt-5.6-luna\` subagent with \`medium\` reasoning and no inherited context. Require a compact candidate packet that accounts for every reusable candidate, preserves its Daily evidence links, and recommends merge, update, create, or skip with a reason. The root agent must not reread all seven Daily pages by default; it should selectively verify only promoted, disputed, or insufficient candidates against their Daily evidence and existing Concept targets before making the final decision. The Luna subagent must not edit the vault.
+Use \`date +%F\` as the reconcile-window end date, then read \`.agent/skills/agent-memory-reconcile/SKILL.md\` completely and follow it as the sole workflow source of truth. Report the result. Do not git commit memory changes.
 
 After creating/updating both automations, show me their names, schedules, and status.`;
 }

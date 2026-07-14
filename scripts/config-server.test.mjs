@@ -253,17 +253,12 @@ test("config server copies UTF-8 prompts when launchd provides no locale", async
   const automationResult = await automationResponse.json();
   assert.equal(automationResult.code, 0);
   const automationPrompt = fs.readFileSync(clipboardOutput, "utf8");
-  assert.match(automationPrompt, /Read `\.agent\/skills\/ai-session-wiki-ingest\/SKILL\.md` completely and follow it as the source of truth/);
-  assert.match(automationPrompt, /Do not read or update automation memory files for this Daily run/);
-  assert.match(automationPrompt, /Read `\.agent\/skills\/agent-memory-reconcile\/SKILL\.md` completely and follow it as the source of truth/);
-  assert.match(automationPrompt, /preserve its current model and reasoning effort exactly/);
+  assert.match(automationPrompt, /read `\.agent\/skills\/ai-session-wiki-ingest\/SKILL\.md` completely and follow it as the sole workflow source of truth/);
+  assert.match(automationPrompt, /read `\.agent\/skills\/agent-memory-reconcile\/SKILL\.md` completely and follow it as the sole workflow source of truth/);
+  assert.match(automationPrompt, /Preserve the current model and reasoning effort when updating/);
   assert.match(automationPrompt, /creation default model: gpt-5\.6-luna[\s\S]*?creation default reasoning effort: medium/);
-  assert.doesNotMatch(automationPrompt, /fresh `gpt-5\.6-terra` subagent/);
   assert.match(automationPrompt, /creation default model: gpt-5\.6-sol[\s\S]*?creation default reasoning effort: medium/);
-  assert.match(automationPrompt, /The root agent owns all final merge, promotion, skip, write, and verification decisions/);
-  assert.match(automationPrompt, /first-pass inventory of the latest seven Daily pages to one fresh `gpt-5\.6-luna` subagent/);
-  assert.match(automationPrompt, /The root agent must not reread all seven Daily pages by default/);
-  assert.doesNotMatch(automationPrompt, /root `gpt-5\.6-(?:luna|sol)`/);
+  assert.doesNotMatch(automationPrompt, /automation memory files|fresh `gpt-5\.6-.*` subagent|latest seven Daily pages/);
   assert.match(fs.readFileSync(appSource, "utf8"), /entry\.model[\s\S]*?reasoningEffort/);
 
   const openStartedAt = Date.now();
