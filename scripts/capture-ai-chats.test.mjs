@@ -44,7 +44,12 @@ test("capture writes one machine-readable evidence layer without Daily conclusio
 
   const capture = runCapture({ fakeHome, output, config });
   const text = captureText(capture);
-  assert.equal(capture.capture_version, 9);
+  assert.equal(capture.snapshot_kind, "bounded_daily_evidence");
+  assert.equal("capture_version" in capture, false);
+  assert.equal("snapshot_limit_bytes" in capture, false);
+  assert.equal(capture.included_turns, 1);
+  assert.equal(capture.omitted_turns, 0);
+  assert.equal(capture.snapshot_mode, "all-turns");
   assert.equal(capture.evidence_card_count, 1);
   assert.match(capture.cards[0].evidence_id, /^codex-rollout-[0-9a-f]{10}$/);
   assert.equal(capture.cards[0].agent, "Codex");
@@ -52,7 +57,7 @@ test("capture writes one machine-readable evidence layer without Daily conclusio
   assert.match(text, /Implement multilingual UI without layout shift/);
   assert.match(text, /Implemented the layout-stable language switcher/);
   assert.doesNotMatch(text, /# AGENTS\.md instructions/);
-  assert.doesNotMatch(text, /## 摘要|## 可复用经验/);
+  assert.doesNotMatch(JSON.stringify(capture.cards), /## 摘要|## 可复用经验/);
   assert.equal(fs.existsSync(output.replace(/\.capture\.json$/, ".model-input.json")), false);
   assert.equal(fs.existsSync(output.replace(/\.capture\.json$/, ".md")), false);
 });
@@ -77,35 +82,7 @@ test("capture uses one binary flag even when user input follows a vault answer",
   assert.equal(capture.contains_vault_answer, true);
   assert.equal(capture.cards[0].contains_vault_answer, true);
   assert.match(text, /This fresh build still failed/);
-  assert.doesNotMatch(text, /memory-derived|Evidence origin|llm-wiki-memory:derived/);
-});
-
-test("capture can freeze an A/B evidence window at an exact timestamp", () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "capture-ai-chats-cutoff-"));
-  const fakeHome = path.join(tmp, "home");
-  const sessionDir = path.join(fakeHome, ".codex", "sessions", "2099", "01", "02");
-  const output = path.join(tmp, "2099-01-02.capture.json");
-  const config = path.join(tmp, "config.json");
-  fs.mkdirSync(sessionDir, { recursive: true });
-  fs.writeFileSync(config, JSON.stringify({ codexSourcesEnabled: true, claudeSourcesEnabled: false }));
-  fs.writeFileSync(path.join(sessionDir, "rollout.jsonl"), [
-    { timestamp: "2099-01-02T01:00:00Z", role: "user", content: "BEFORE_CUTOFF_GOAL", cwd: "/tmp/project" },
-    { timestamp: "2099-01-02T01:01:00Z", role: "assistant", content: "BEFORE_CUTOFF_OUTCOME" },
-    { timestamp: "2099-01-02T01:10:00Z", role: "user", content: "AFTER_CUTOFF_GOAL" },
-    { timestamp: "2099-01-02T01:11:00Z", role: "assistant", content: "AFTER_CUTOFF_OUTCOME" },
-  ].map(JSON.stringify).join("\n") + "\n");
-
-  const capture = runCapture({
-    fakeHome,
-    output,
-    config,
-    extraEnv: { LLM_WIKI_CAPTURE_END_TIMESTAMP: "2099-01-02T01:05:00Z" },
-  });
-  const text = captureText(capture);
-  assert.match(text, /BEFORE_CUTOFF_GOAL/);
-  assert.doesNotMatch(text, /AFTER_CUTOFF_GOAL/);
-  assert.equal(capture.capture_end_timestamp, "2099-01-02T01:05:00Z");
-  assert.equal(capture.cards[0].counts.user_turns, 1);
+  assert.doesNotMatch(JSON.stringify(capture.cards), /memory-derived|Evidence origin|llm-wiki-memory:derived/);
 });
 
 test("schema owns the provenance marker and loader reads the schema", () => {
@@ -124,25 +101,11 @@ test("schema owns the provenance marker and loader reads the schema", () => {
   assert.match(loader, /Daily `可复用经验` candidate as effective guidance/i);
 });
 
-test("daily ingest uses one bounded packet and one local verification path", () => {
+test("daily ingest emits one persisted Evidence Snapshot and verifies locally", () => {
   const skill = fs.readFileSync(path.join(repoRoot, ".agent", "skills", "ai-session-wiki-ingest", "SKILL.md"), "utf8");
-  assert.match(skill, /session logs -> canonical Capture -> bounded packet -> one Daily page -> local verify/);
-  assert.match(skill, /daily-memory-workflow\.mjs prepare YYYY-MM-DD --emit-packet/);
+  assert.match(skill, /daily-memory-workflow\.mjs prepare YYYY-MM-DD --emit-snapshot/);
   assert.match(skill, /daily-memory-workflow\.mjs verify/);
-  assert.match(skill, /packet is a temporary\s+model view capped at 96 KiB/i);
-  assert.match(skill, /removes\s+lower-scored turns first/i);
-  assert.match(skill, /Never poll or rerun prepare/i);
-  assert.match(skill, /outer\s+`functions\.exec` call.*nested `exec_command`.*max_output_tokens: 100000/is);
-  assert.match(skill, /Warning: truncated output/);
-  assert.doesNotMatch(skill, /40,000-token tool-output budget/);
-  assert.match(skill, /END SYNTHESIS PACKET/);
-  assert.match(skill, /not a transport failure/i);
-  assert.match(skill, /one synthesis pass/i);
-  assert.match(skill, /Target 3-5 root\s+model continuations and never exceed 6/i);
-  assert.match(skill, /Do not inspect the helper source/i);
-  assert.match(skill, /Do not read or (?:edit|patch) `wiki\/log\.md`/i);
-  assert.match(skill, /Never report a business-level\s+blocked state/i);
-  assert.doesNotMatch(skill, /drill-down|raw-slice|coverage ledger/i);
+  assert.doesNotMatch(skill, /--emit-packet|SYNTHESIS PACKET|lower-scored turns/i);
 });
 
 test("reconcile recomputes the current window instead of replaying old output", () => {
@@ -155,48 +118,7 @@ test("reconcile recomputes the current window instead of replaying old output", 
   assert.match(skill, /Do not modify `wiki\/guardrails\/Agent Behavior Rules\.md`/i);
 });
 
-test("capture extracts session images without copying base64 into Markdown", () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "capture-ai-chats-visual-"));
-  const fakeHome = path.join(tmp, "home");
-  const sessionDir = path.join(fakeHome, ".codex", "sessions", "2099", "01", "02");
-  const output = path.join(tmp, "2099-01-02.capture.json");
-  const assetDir = path.join(tmp, "capture-assets");
-  const config = path.join(tmp, "config.json");
-  const onePixelPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z7aAAAAAASUVORK5CYII=";
-  fs.mkdirSync(sessionDir, { recursive: true });
-  fs.writeFileSync(config, JSON.stringify({ codexSourcesEnabled: true, claudeSourcesEnabled: false }));
-  fs.writeFileSync(path.join(sessionDir, "rollout.jsonl"), [
-    {
-      timestamp: "2099-01-02T01:01:00Z",
-      type: "response_item",
-      payload: {
-        type: "message",
-        role: "user",
-        cwd: "/tmp/project",
-        content: [
-          { type: "input_text", text: "The browser still shows the old UI. This screenshot is evidence." },
-          { type: "input_image", image_url: `data:image/png;base64,${onePixelPng}`, detail: "high" },
-        ],
-      },
-    },
-    { timestamp: "2099-01-02T01:02:00Z", role: "assistant", content: "Verify the running build before source reasoning." },
-  ].map(JSON.stringify).join("\n") + "\n");
-
-  const capture = runCapture({
-    fakeHome,
-    output,
-    config,
-    extraEnv: { LLM_WIKI_CAPTURE_ASSET_DIR: assetDir },
-  });
-  const text = captureText(capture);
-  assert.equal(capture.visual_evidence_count, 1);
-  assert.match(capture.cards[0].visuals[0].capture_file, /\.(?:png)$/);
-  assert.equal(capture.cards[0].visuals[0].media_type, "image/png");
-  assert.doesNotMatch(text, /iVBORw0KGgo/);
-  assert.equal(fs.readdirSync(assetDir).length, 1);
-});
-
-test("capture preserves every normalized user turn and final outcome without preselecting eight", () => {
+test("capture preserves long high-value fields without the old per-field caps", () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "capture-ai-chats-highlights-"));
   const fakeHome = path.join(tmp, "home");
   const sessionDir = path.join(fakeHome, ".codex", "sessions", "2099", "01", "02");
@@ -204,84 +126,65 @@ test("capture preserves every normalized user turn and final outcome without pre
   const config = path.join(tmp, "config.json");
   fs.mkdirSync(sessionDir, { recursive: true });
   fs.writeFileSync(config, JSON.stringify({ codexSourcesEnabled: true, claudeSourcesEnabled: false }));
+  const goal = `GOAL_BEGIN ${"g".repeat(700)} GOAL_END_SENTINEL`;
+  const evidence = `EVIDENCE_BEGIN root cause verified with \`npm test\` at /tmp/runtime ${"e".repeat(700)} EVIDENCE_END_SENTINEL`;
+  const outcome = `OUTCOME_BEGIN ${"o".repeat(900)} OUTCOME_END_SENTINEL`;
+  const records = [
+    { timestamp: "2099-01-02T01:00:00Z", role: "user", content: goal, cwd: "/tmp/project" },
+    { timestamp: "2099-01-02T01:01:00Z", role: "assistant", phase: "commentary", content: evidence },
+    { timestamp: "2099-01-02T01:02:00Z", role: "assistant", phase: "final_answer", content: outcome },
+  ];
+  fs.writeFileSync(path.join(sessionDir, "rollout.jsonl"), `${records.map(JSON.stringify).join("\n")}\n`);
+
+  const capture = runCapture({ fakeHome, output, config });
+  const [turn] = capture.cards[0].turns;
+  assert.equal(turn.goal, goal);
+  assert.equal(turn.decisive_evidence.text, evidence);
+  assert.equal(turn.outcomes[0].text, outcome);
+  assert.doesNotMatch(captureText(capture), /\[truncated\]|field compacted locally/);
+  assert.equal("score" in turn, false);
+});
+
+test("capture enforces one total budget by omitting whole turns", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "capture-ai-chats-budget-"));
+  const fakeHome = path.join(tmp, "home");
+  const sessionDir = path.join(fakeHome, ".codex", "sessions", "2099", "01", "02");
+  const output = path.join(tmp, "2099-01-02.capture.json");
+  const config = path.join(tmp, "config.json");
+  fs.mkdirSync(sessionDir, { recursive: true });
+  fs.writeFileSync(config, JSON.stringify({ codexSourcesEnabled: true, claudeSourcesEnabled: false }));
   const records = [];
-  for (let turn = 0; turn < 15; turn += 1) {
+  for (let turn = 0; turn < 40; turn += 1) {
+    const stamp = String(turn).padStart(2, "0");
     records.push({
-      timestamp: `2099-01-02T01:${String(turn * 5).padStart(2, "0")}:00Z`,
-      type: "response_item",
-      payload: {
-        type: "message",
-        role: "user",
-        content: `<recommended_plugins> injected plugin list ${turn}`,
-      },
+      timestamp: `2099-01-02T01:${stamp}:00Z`,
+      role: "user",
+      cwd: "/tmp/project",
+      content: `GOAL_${stamp}_BEGIN ${"g".repeat(2000)} GOAL_${stamp}_END`,
     });
     records.push({
-      timestamp: `2099-01-02T01:${String(turn * 5 + 1).padStart(2, "0")}:00Z`,
-      type: "response_item",
-      payload: {
-        type: "message",
-        role: "user",
-        content: `USER_GOAL_${turn}: investigate and finish this workstream`,
-        cwd: "/tmp/project",
-      },
-    });
-    records.push({
-      timestamp: `2099-01-02T01:${String(turn * 5 + 2).padStart(2, "0")}:00Z`,
-      type: "response_item",
-      payload: {
-        type: "message",
-        role: "assistant",
-        phase: "commentary",
-        content: `Routine progress for turn ${turn}`,
-      },
-    });
-    records.push({
-      timestamp: `2099-01-02T01:${String(turn * 5 + 3).padStart(2, "0")}:00Z`,
-      type: "response_item",
-      payload: {
-        type: "message",
-        role: "assistant",
-        phase: "commentary",
-        content: turn === 4
-          ? "ROOT_CAUSE_SIGNAL RCV-123: root cause path /tmp/runtime proves the bundle was not rebuilt"
-          : `Evidence update for turn ${turn}`,
-      },
-    });
-    records.push({
-      timestamp: `2099-01-02T01:${String(turn * 5 + 4).padStart(2, "0")}:00Z`,
-      type: "response_item",
-      payload: {
-        type: "message",
-        role: "assistant",
-        phase: "final_answer",
-        content: `FINAL_OUTCOME_${turn}: verified result and remaining blocker`,
-      },
+      timestamp: `2099-01-02T02:${stamp}:00Z`,
+      role: "assistant",
+      phase: "final_answer",
+      content: `OUTCOME_${stamp}_BEGIN ${"o".repeat(2000)} OUTCOME_${stamp}_END`,
     });
   }
   fs.writeFileSync(path.join(sessionDir, "rollout.jsonl"), `${records.map(JSON.stringify).join("\n")}\n`);
 
   const capture = runCapture({ fakeHome, output, config });
-  const compactText = captureText(capture);
-  const card = capture.cards[0];
-  assert.match(compactText, /ROOT_CAUSE_SIGNAL RCV-123/);
-  assert.equal(capture.capture_version, 9);
-  assert.equal(capture.evidence_card_count, 1);
-  assert.equal(card.turns.length, 15);
-  assert.equal(card.counts.user_turns, 15);
-  assert.equal(card.counts.final_outcomes, 15);
-  assert.match(compactText, /ROOT_CAUSE_SIGNAL RCV-123/);
-  assert.doesNotMatch(compactText, /Routine progress|Evidence update/);
-  assert.match(compactText, /USER_GOAL_0/);
-  assert.match(compactText, /FINAL_OUTCOME_0/);
-  assert.match(compactText, /USER_GOAL_14/);
-  assert.match(compactText, /FINAL_OUTCOME_14/);
-  for (let turn = 0; turn < 15; turn += 1) {
-    assert.match(compactText, new RegExp(`USER_GOAL_${turn}`));
-    assert.match(compactText, new RegExp(`FINAL_OUTCOME_${turn}`));
+  const persisted = fs.readFileSync(output, "utf8");
+  const included = new Set(capture.cards[0].turns.map((turn) => turn.turn_number - 1));
+  assert.equal(capture.snapshot_mode, "whole-turn-trim");
+  assert.ok(capture.omitted_turns > 0);
+  assert.equal(capture.included_turns + capture.omitted_turns, 40);
+  assert.ok(Buffer.byteLength(persisted) <= 96 * 1024);
+  for (let turn = 0; turn < 40; turn += 1) {
+    const stamp = String(turn).padStart(2, "0");
+    for (const sentinel of [`GOAL_${stamp}_BEGIN`, `GOAL_${stamp}_END`, `OUTCOME_${stamp}_BEGIN`, `OUTCOME_${stamp}_END`]) {
+      assert.equal(persisted.includes(sentinel), included.has(turn), sentinel);
+    }
   }
-  assert.doesNotMatch(compactText, /injected plugin list/);
-  assert.equal(card.counts.conversation_messages, 60);
-  assert.doesNotMatch(compactText, /conversation_highlights_reduced|omitted_model_turns/);
+  assert.doesNotMatch(persisted, /\[truncated\]|field compacted locally/);
 });
 
 test("capture keeps automation requests and skips structured Codex subagent sessions", () => {
@@ -513,6 +416,9 @@ test("capture resolves its repo root when the script path contains spaces", () =
   const expectedOutput = path.join(spacedRepo, ".vault-meta", "captures", "ai-chats", "2099-01-02.capture.json");
   fs.mkdirSync(path.dirname(copiedScript), { recursive: true });
   fs.copyFileSync(script, copiedScript);
+  fs.writeFileSync(path.join(spacedRepo, "SCHEMA.md"), "# Schema\n");
+  fs.mkdirSync(path.join(spacedRepo, "wiki", "templates"), { recursive: true });
+  fs.writeFileSync(path.join(spacedRepo, "wiki", "templates", "Daily AI Chat Summary Template.md"), "# Daily template\n");
 
   execFileSync(process.execPath, [copiedScript, "2099-01-02"], {
     cwd: spacedRepo,

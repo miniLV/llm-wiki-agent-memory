@@ -22,7 +22,10 @@ function seedCore(root, rules = "No promoted rules yet.\n") {
 
 function captureCard({ date, id, agent = "Codex", source = "~/.codex/sessions/example.jsonl", containsVaultAnswer = false }) {
   return `${JSON.stringify({
-    capture_version: 9,
+    snapshot_kind: "bounded_daily_evidence",
+    included_turns: 0,
+    omitted_turns: 0,
+    snapshot_mode: "all-turns",
     date,
     evidence_card_count: 1,
     contains_vault_answer: containsVaultAnswer,
@@ -166,50 +169,6 @@ ${evidenceLink("2026-07-03", "codex-example")}
   assert.equal(json.issues.length, 0);
 });
 
-test("wiki lint keeps legacy Markdown captures readable for historical Daily pages", () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "wiki-lint-legacy-capture-"));
-  const date = "2026-06-30";
-  seedCore(tmp);
-  write(path.join(tmp, ".vault-meta", "config.json"), '{"dailySummaryDetail":"concise"}\n');
-  write(
-    path.join(tmp, ".vault-meta", "captures", "ai-chats", `${date}.md`),
-    `capture_version: 8\ncontains_vault_answer: false\n\n<a id="codex-legacy"></a>\n\n- Evidence ID: codex-legacy\n- Agent: Codex\n- Source file: ~/.codex/sessions/legacy.jsonl\n`,
-  );
-  write(
-    path.join(tmp, ".vault-meta", "captures", "ai-chats", `${date}.capture.json`),
-    captureCard({ date, id: "codex-json" }),
-  );
-  write(
-    path.join(tmp, "wiki", "sources", "ai-chats", `${date}.md`),
-    `---
-date: ${date}
-lookup_keys: []
-confidence: medium
-contains_vault_answer: false
----
-
-## 摘要
-
-- 历史记录。
-
-## 关键会话
-
-### Legacy provenance
-
-- 证据来源：[Codex · codex-legacy](../../../.vault-meta/captures/ai-chats/${date}.md#codex-legacy)
-
-- 已保留旧审计链。
-
-## 可复用经验
-
-- 无。
-`,
-  );
-
-  const { json } = runLint(tmp, true);
-  assert.equal(json.issues.filter((issue) => issue.severity === "error").length, 0);
-});
-
 test("wiki lint enforces the Capture-derived flag and at most three topic links", () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "wiki-lint-topic-limits-"));
   const date = "2026-07-08";
@@ -224,7 +183,10 @@ test("wiki lint enforces the Capture-derived flag and at most three topic links"
   write(
     path.join(tmp, ".vault-meta", "captures", "ai-chats", `${date}.capture.json`),
     `${JSON.stringify({
-      capture_version: 9,
+      snapshot_kind: "bounded_daily_evidence",
+      included_turns: 0,
+      omitted_turns: 0,
+      snapshot_mode: "all-turns",
       date,
       evidence_card_count: cards.length,
       contains_vault_answer: true,

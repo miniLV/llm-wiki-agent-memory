@@ -3,7 +3,7 @@
 This repository follows the LLM Wiki model:
 
 ```text
-External agent sessions -> Canonical Capture -> Ephemeral packet -> Daily backup -> Reviewed Concepts
+External agent sessions -> Bounded Evidence Snapshot -> Daily backup -> Reviewed Concepts
 ```
 
 `SCHEMA.md` is the single owner of the memory model. Skills define procedures and
@@ -22,17 +22,21 @@ wiki/
   templates/Daily AI Chat Summary Template.md
 
 .vault-meta/
-  captures/ai-chats/YYYY-MM-DD.capture.json  # regenerable machine evidence
+  captures/ai-chats/YYYY-MM-DD.capture.json  # regenerable bounded Evidence Snapshot
   reviews/                         # local lint/reconcile reports
 ```
 
-Raw Codex and Claude Code session logs remain in their original locations as immutable
-audit evidence. The versioned JSON Capture is the canonical normalized evidence layer
-for the Daily workflow; it preserves every meaningful turn and all captured final and
-delegated outcomes. The bounded model packet is derived from that Capture in memory and
-is never a durable layer. When the compact view exceeds 96 KiB, the packet omits
-lower-priority turns while retaining every Evidence Card's identity and source. The
-Capture remains complete. Daily pages are the default evidence surface for queries.
+Raw Codex and Claude Code session logs remain in their original locations as the
+complete immutable fact source. The `.capture.json` file is a lossy, regenerable
+Evidence Snapshot for one Daily run. It normalizes high-value
+evidence: goals, final and delegated outcomes, latest unresolved state, and a
+representative high-signal intermediate update. When necessary, it omits whole older
+completed turns before unresolved work while retaining every Evidence Card's identity,
+original session path, and latest turn. It never truncates individual fields to make
+them fit. `prepare --emit-snapshot` writes this Snapshot to disk and then emits those
+exact bytes once; the emit is a delivery action, not a second packet or memory layer.
+If protected evidence still exceeds the budget, prepare skips and emits nothing.
+Daily pages are the default evidence surface for queries.
 
 ## Daily Wiki
 
@@ -60,7 +64,7 @@ the full transcript.
 
 Each `###` topic under `关键会话` owns its provenance. Its first content line is
 `- 证据来源：` followed by one to three Markdown links to representative Evidence
-Cards in the dated capture, for example:
+Cards in the dated Evidence Snapshot, for example:
 
 ```markdown
 ### Runtime verification
@@ -71,9 +75,9 @@ Cards in the dated capture, for example:
 Do not put original session paths or a page-wide source list in Daily frontmatter.
 The linked JSON card records its stable Evidence ID, `agent: Codex` or
 `agent: Claude Code`, and the original session path. This gives the audit chain
-`Daily topic -> representative capture Evidence Card -> original session` for normal
+`Daily topic -> representative Snapshot Evidence Card -> original session` for normal
 use without making a Daily look as if it was compiled directly from raw JSONL. An
-explicit audit follows the representative Capture Card to its original session. If
+explicit audit follows the representative Evidence Card to its original session. If
 more than three independent evidence chains are needed, split the topic by independent
 outcome; never cite unrelated cards merely because they occurred on the same date.
 
@@ -89,9 +93,9 @@ Vault-backed query answers end with this hidden marker:
 <!-- llm-wiki-memory:derived -->
 ```
 
-Capture removes the marker from displayed text and sets a binary derived flag. Daily
-copies the aggregate flag to `contains_vault_answer`; it does not maintain origin
-states, origin counts, or per-item origin labels.
+The Evidence Snapshot removes the marker from displayed text and sets a binary derived
+flag. Daily copies the aggregate flag to `contains_vault_answer`; it does not maintain
+origin states, origin counts, or per-item origin labels.
 
 A Daily page with `contains_vault_answer: true` is useful context but is not
 automatically independent evidence for promotion. Reconcile may use it only after an
@@ -131,8 +135,10 @@ remains canonical.
   and date-range questions may use Daily pages as historical evidence. Reusable
   guidance comes only from reviewed Concepts.
 - Query is read-only. It does not write answers back into the vault.
-- Daily consumes only its bounded packet. For an explicit later audit, Query or
-  Reconcile may inspect a linked Capture Card before opening the original session log.
+- Daily consumes only the once-emitted bounded Evidence Snapshot. During normal
+  compilation it does not reopen that Snapshot, raw sessions, or an older Daily. For
+  an explicit later audit, Query or Reconcile may inspect a linked Evidence Card
+  before opening the original session log.
 
 Only `engineering-memory-loader` is exposed globally. Daily and reconcile remain
 repo-local workflows invoked by manual or scheduled runs. Scheduling is external;

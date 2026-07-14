@@ -26,16 +26,17 @@ function setupRoot(prefix) {
 }
 
 function parsePrepare(stdout) {
-  const [resultLine, ...lines] = stdout.split("\n");
-  const marker = "--- SYNTHESIS PACKET ---";
-  const body = lines.join("\n");
+  const resultEnd = stdout.indexOf("\n");
+  const resultLine = resultEnd === -1 ? stdout : stdout.slice(0, resultEnd);
+  const marker = "\n--- EVIDENCE SNAPSHOT ---\n";
+  const markerAt = stdout.indexOf(marker);
   return {
     result: JSON.parse(resultLine),
-    packet: body.includes(marker) ? body.slice(body.indexOf(marker) + marker.length).trimStart() : "",
+    snapshot: markerAt === -1 ? "" : stdout.slice(markerAt + marker.length),
   };
 }
 
-test("prepare emits one bounded packet and verify checks the Daily locally", () => {
+test("prepare emits the persisted Evidence Snapshot bytes once and verify checks the Daily locally", () => {
   const { root, helper } = setupRoot("daily-memory-workflow-");
   const date = "2099-01-02";
   write(path.join(root, "scripts", "capture-ai-chats.mjs"), `
@@ -43,6 +44,8 @@ test("prepare emits one bounded packet and verify checks the Daily locally", () 
     import path from "node:path";
     const date = process.argv[2];
     const dir = path.join(process.cwd(), ".vault-meta", "captures", "ai-chats");
+    const longGoal = "GOAL_BEGIN " + "g".repeat(700) + " GOAL_END_SENTINEL";
+    const longOutcome = "OUTCOME_BEGIN " + "o".repeat(900) + " OUTCOME_END_SENTINEL";
     const cards = [{
       evidence_id: "codex-test-1",
       agent: "Codex",
@@ -54,8 +57,13 @@ test("prepare emits one bounded packet and verify checks the Daily locally", () 
       warnings: [],
       carryover_outcomes: [{ text: "Carryover deployment completed" }],
       turns: [
-        { turn_number: 1, goal: "Investigate", outcomes: [], score: 2 },
-        { turn_number: 2, goal: "Find root cause", outcomes: [{ text: "Verified fix" }], score: 10 },
+        { turn_number: 1, goal: "Investigate", outcomes: [] },
+        {
+          turn_number: 2,
+          goal: longGoal,
+          decisive_evidence: { text: "Root cause verified from the runtime artifact" },
+          outcomes: [{ text: longOutcome }],
+        },
       ],
     }, {
       evidence_id: "claude-test-2",
@@ -66,11 +74,14 @@ test("prepare emits one bounded packet and verify checks the Daily locally", () 
       last_timestamp: "2099-01-02T09:00:00.000Z",
       counts: { user_turns: 1, final_outcomes: 1, turns_without_final_outcome: 0 },
       warnings: [],
-      turns: [{ turn_number: 1, goal: "Review", outcomes: [{ text: "Review complete" }], score: 8 }],
+      turns: [{ turn_number: 1, goal: "Review", outcomes: [{ text: "Review complete" }] }],
     }];
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, \`${date}.capture.json\`), JSON.stringify({
-      capture_version: 9,
+      snapshot_kind: "bounded_daily_evidence",
+      included_turns: 3,
+      omitted_turns: 0,
+      snapshot_mode: "all-turns",
       date,
       generated_at: new Date().toISOString(),
       capture_end_timestamp: null,
@@ -78,7 +89,7 @@ test("prepare emits one bounded packet and verify checks the Daily locally", () 
       contains_vault_answer: false,
       warnings: [],
       cards,
-    }));
+    }, null, 2) + "\\n");
   `);
   write(path.join(root, "scripts", "wiki-lint.mjs"), `
     import fs from "node:fs";
@@ -88,31 +99,30 @@ test("prepare emits one bounded packet and verify checks the Daily locally", () 
     fs.writeFileSync(file, JSON.stringify({ issues: [] }));
   `);
 
-  const legacyCapturePath = path.join(root, ".vault-meta", "captures", "ai-chats", `${date}.md`);
-  write(legacyCapturePath, "legacy capture\n");
-  const prepared = spawnSync(process.execPath, [helper, "prepare", date, "--emit-packet"], {
+  const prepared = spawnSync(process.execPath, [helper, "prepare", date, "--emit-snapshot"], {
     cwd: root,
     encoding: "utf8",
   });
   assert.equal(prepared.status, 0, prepared.stderr);
-  const { result, packet } = parsePrepare(prepared.stdout);
+  const { result, snapshot } = parsePrepare(prepared.stdout);
+  const persistedSnapshot = fs.readFileSync(path.join(root, ".vault-meta", "captures", "ai-chats", `${date}.capture.json`), "utf8");
   assert.equal(result.status, "ready");
   assert.equal(result.evidenceCards, 2);
   assert.equal(result.captureTurns, 3);
   assert.equal(result.includedTurns, 3);
   assert.equal(result.omittedTurns, 0);
-  assert.equal(result.packetMode, "all-turns");
-  assert.equal(result.packetLimitBytes, 96 * 1024);
-  assert.equal(result.packetBytes, Buffer.byteLength(packet));
-  assert.match(packet, /codex-test-1/);
-  assert.match(packet, /claude-test-2/);
-  assert.match(packet, /Verified fix/);
-  assert.match(packet, /Carryover deployment completed/);
-  assert.match(packet, /carryover=1/);
-  assert.match(packet, /Last activity: 2099-01-02T08:00:00\.000Z/);
-  assert.match(packet, /--- END SYNTHESIS PACKET cards=2 included_turns=3 omitted_turns=0 ---\n$/);
-  assert.doesNotMatch(packet, /daily-coverage|drill-down|raw-slice/);
-  assert.equal(fs.existsSync(legacyCapturePath), true);
+  assert.equal(result.snapshotMode, "all-turns");
+  assert.equal(result.snapshotPersisted, true);
+  assert.equal("snapshotLimitBytes" in result, false);
+  assert.equal(result.snapshotBytes, Buffer.byteLength(persistedSnapshot));
+  assert.equal(snapshot, persistedSnapshot);
+  assert.equal(prepared.stdout.split("--- EVIDENCE SNAPSHOT ---").length - 1, 1);
+  assert.match(snapshot, /codex-test-1/);
+  assert.match(snapshot, /claude-test-2/);
+  assert.match(snapshot, /GOAL_END_SENTINEL/);
+  assert.match(snapshot, /OUTCOME_END_SENTINEL/);
+  assert.match(snapshot, /Carryover deployment completed/);
+  assert.doesNotMatch(snapshot, /\[truncated\]|field compacted locally/);
 
   execFileSync("git", ["init", "--quiet"], { cwd: root });
   const missing = spawnSync(process.execPath, [helper, "verify", date], { cwd: root, encoding: "utf8" });
@@ -133,8 +143,7 @@ date: ${date}
   fs.utimesSync(dailyPath, new Date(0), new Date(0));
   const stale = spawnSync(process.execPath, [helper, "verify", date], { cwd: root, encoding: "utf8" });
   assert.equal(stale.status, 1);
-  assert.match(JSON.parse(stale.stdout).failure, /Daily page was not written after current Capture/);
-  assert.equal(fs.existsSync(legacyCapturePath), true);
+  assert.match(JSON.parse(stale.stdout).failure, /Daily page was not written after current Evidence Snapshot/);
 
   write(dailyPath, dailyText);
   const freshTime = new Date(Date.now() + 1000);
@@ -146,68 +155,6 @@ date: ${date}
   assert.equal(verification.ok, true);
   assert.equal(verification.logAppended, true);
   assert.match(verification.logEntry, /compiled/);
-  assert.equal(fs.existsSync(legacyCapturePath), false);
-});
-
-test("prepare drops low-priority turns instead of blocking when the packet is oversized", () => {
-  const { root, helper } = setupRoot("daily-memory-workflow-overflow-");
-  const date = "2099-01-03";
-  write(path.join(root, "scripts", "capture-ai-chats.mjs"), `
-    import fs from "node:fs";
-    import path from "node:path";
-    const date = process.argv[2];
-    const dir = path.join(process.cwd(), ".vault-meta", "captures", "ai-chats");
-    const cards = Array.from({ length: 30 }, (_, cardIndex) => ({
-      evidence_id: \`card-\${String(cardIndex).padStart(2, "0")}\`,
-      agent: "Codex",
-      repo: "repo",
-      cwd: "/tmp/repo",
-      source_file: \`/tmp/session-\${cardIndex}.jsonl\`,
-      last_timestamp: "2099-01-03T09:00:00.000Z",
-      counts: { user_turns: 20, final_outcomes: 19, turns_without_final_outcome: 1 },
-      warnings: [],
-      turns: Array.from({ length: 20 }, (_, turnIndex) => ({
-        turn_number: turnIndex + 1,
-        goal: (turnIndex === 0 ? \`LOW_VALUE_\${cardIndex} \` : turnIndex === 10 ? \`HIGH_VALUE_\${cardIndex} \` : turnIndex === 19 ? \`LATEST_\${cardIndex} \` : "routine ") + "g".repeat(300),
-        outcomes: turnIndex === 0 ? [] : [{ text: "result " + "r".repeat(500) }],
-        latest_unresolved_state: turnIndex === 0 ? { text: "Still investigating" } : null,
-        unresolved: turnIndex === 0,
-        score: turnIndex === 10 ? 1000 : turnIndex === 0 ? 2 : 10,
-      })),
-    }));
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, \`${date}.capture.json\`), JSON.stringify({
-      capture_version: 9,
-      date,
-      generated_at: new Date().toISOString(),
-      evidence_card_count: cards.length,
-      contains_vault_answer: false,
-      warnings: [],
-      cards,
-    }));
-  `);
-
-  const prepared = spawnSync(process.execPath, [helper, "prepare", date, "--emit-packet"], {
-    cwd: root,
-    encoding: "utf8",
-    maxBuffer: 2 * 1024 * 1024,
-  });
-  assert.equal(prepared.status, 0, prepared.stderr);
-  const { result, packet } = parsePrepare(prepared.stdout);
-  assert.equal(result.status, "ready");
-  assert.equal(result.packetMode, "priority-trim");
-  assert.equal(result.captureTurns, 600);
-  assert.ok(result.omittedTurns > 0);
-  assert.equal(result.includedTurns + result.omittedTurns, 600);
-  assert.ok(result.packetBytes <= result.packetLimitBytes);
-  assert.match(packet, /HIGH_VALUE_0/);
-  assert.match(packet, /LATEST_0/);
-  assert.doesNotMatch(packet, /LOW_VALUE_0/);
-  for (let cardIndex = 0; cardIndex < 30; cardIndex += 1) {
-    assert.match(packet, new RegExp(`card-${String(cardIndex).padStart(2, "0")}`));
-  }
-  assert.match(packet, /lower-priority turns omitted locally/);
-  assert.match(packet, /--- END SYNTHESIS PACKET cards=30 included_turns=\d+ omitted_turns=\d+ ---\n$/);
 });
 
 test("prepare reports skipped when a date has no source sessions", () => {
@@ -220,7 +167,10 @@ test("prepare reports skipped when a date has no source sessions", () => {
     const dir = path.join(process.cwd(), ".vault-meta", "captures", "ai-chats");
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, \`${date}.capture.json\`), JSON.stringify({
-      capture_version: 9,
+      snapshot_kind: "bounded_daily_evidence",
+      included_turns: 0,
+      omitted_turns: 0,
+      snapshot_mode: "all-turns",
       date,
       generated_at: new Date().toISOString(),
       evidence_card_count: 0,
@@ -230,12 +180,12 @@ test("prepare reports skipped when a date has no source sessions", () => {
     }));
   `);
 
-  const prepared = spawnSync(process.execPath, [helper, "prepare", date, "--emit-packet"], {
+  const prepared = spawnSync(process.execPath, [helper, "prepare", date, "--emit-snapshot"], {
     cwd: root,
     encoding: "utf8",
   });
   assert.equal(prepared.status, 0, prepared.stderr);
-  const { result, packet } = parsePrepare(prepared.stdout);
+  const { result, snapshot } = parsePrepare(prepared.stdout);
   assert.equal(result.status, "skipped_no_sources");
-  assert.equal(packet, "");
+  assert.equal(snapshot, "");
 });

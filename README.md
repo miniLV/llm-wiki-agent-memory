@@ -52,7 +52,7 @@ bash scripts/config-ui.sh --open
 
 ## 架构亮点
 
-整体架构：本机会话先进入 evidence inbox，再编译成 Daily Wiki；Weekly Review 负责晋升稳定经验，最终通过 memory loader 回到下一次任务。
+整体架构：本机会话先生成一份有界 Evidence Snapshot，再编译成 Daily Wiki；Weekly Review 负责晋升稳定经验，最终通过 memory loader 回到下一次任务。
 
 ![LLM Wiki Agent Memory 架构图](docs/agent-memory-arch-sketch.png)
 
@@ -63,12 +63,11 @@ bash scripts/config-ui.sh --open
 <sub>上面两张图使用 [miniLV/sketchboard-diagram](https://github.com/miniLV/sketchboard-diagram) 这个 agent skill 绘制；它可以快速生成同款手绘白板风 HTML 架构图并导出 PNG。</sub>
 
 - Key-driven synthesis：Daily run 会保留 Jira / issue / work item id、feature、repo、tool 和 alias，让 `ABC-123`、`owner/repo#123`、`AI VBG`、`aivbg` 这类输入可以串起相关历史。
-- 有界但完整：Capture 为每个 session 保留按时间排序的关键对话高光，Daily Wiki 会记录关键尝试、备选方案、证据变化、结论和未解决事项，而不是把复杂会话压成一句话。
+- 单层有界输入：raw session 是完整事实源；Daily run 生成一份可重新生成的 bounded Evidence Snapshot，并把同一份内容一次性交给 agent。超过内部预算时优先省略较早且已完成的整个 turn，不对字段做二次截断。
 - 自动汇总历史：当一个 key 命中多次历史会话时，agent 会过滤低相关项，再汇总时间线、关键决策、反复问题、当前状态和下一步。
-- 两级记忆：Daily Wiki 保留具体 evidence 和检索 key；Weekly Review 只把反复出现的主题沉淀成 concept / guardrail，并维护 `index.md` / `hot.md`。
-- 视觉证据：Daily capture 能从 session 中提取截图到本地 evidence inbox；图片按证据价值评分后才会进入 Wiki。关系复杂度达到门槛时自动生成或更新主题 Canvas，否则使用 Mermaid 或文字，文字总结始终是可检索的主记录。
-- 防膨胀：普通 ticket / project key 不默认晋升成长期记忆；只有稳定父级主题或长期 workstream 才沉淀成 concept。`Agent Behavior Rules` 最多 10 条。
-- 可审计：每个 Daily 「关键会话」展示 1-3 张代表性 capture Evidence Card；Card 保留原始 session 路径，需要审计时可沿链接反查。
+- 两级记忆：Daily Wiki 保留具体 evidence 和检索 key；Weekly Review 只把反复出现且通过复核的主题沉淀成 Concept。
+- 防膨胀：普通 ticket / project key 不默认晋升成长期记忆；只有稳定父级主题或长期 workstream 才沉淀成 Concept。
+- 可审计：每个 Daily 「关键会话」展示 1-3 张代表性 Snapshot Evidence Card；Card 保留原始 session 路径，需要审计时可沿链接反查 raw session。
 
 ## 本地配置界面
 
@@ -101,7 +100,7 @@ bash scripts/config-ui.sh --open
 我改了源码，但浏览器还是旧行为，帮我按历史经验排查一下
 ```
 
-Codex 会通过 `engineering-memory-loader` 读取本地 wiki，优先看 `wiki/hot.md` / `wiki/index.md`，再按 key 搜索 Daily Wiki 和 concepts，最后返回日期、结论和证据；没有记录时会明确返回 `NO_MATCH`。
+Codex 会通过 `engineering-memory-loader` 读取本地 wiki，按问题读取最新 Daily 或按 key 搜索 Daily Wiki 和 Concepts，最后返回日期、结论和证据；没有记录时会明确返回 `NO_MATCH`。
 
 ![LLM Wiki Agent Memory 在 Codex 中的查询示例](docs/assets/codex-engineering-memory-example.png)
 
@@ -109,7 +108,7 @@ Codex 会通过 `engineering-memory-loader` 读取本地 wiki，优先看 `wiki/
 
 | 类型 | 当前支持 |
 |---|---|
-| Source 输入 | 支持 Codex、Claude Code 和自定义文件夹。Codex 读取 `~/.codex/sessions/` 和 `~/.codex/archived_sessions/`；Claude Code 读取 `~/.claude/projects/`。Session 内的截图会先进入本地 evidence inbox，再由 Daily Wiki 选择有价值的视觉证据。 |
+| Source 输入 | 支持 Codex、Claude Code 和自定义文件夹。Codex 读取 `~/.codex/sessions/` 和 `~/.codex/archived_sessions/`；Claude Code 读取 `~/.claude/projects/`。Raw session 保持原位，Daily 只接收一次有界 Evidence Snapshot。 |
 | Runner 定时执行 | 当前只支持 Codex App Automations 跑 daily / weekly job。为了避免双写，同一个 vault 只允许一个定时 runner 写入；Codex CLI + launchd / cron、Claude Code runner 还在开发中。 |
 
 ## 本地与隐私
@@ -117,8 +116,7 @@ Codex 会通过 `engineering-memory-loader` 读取本地 wiki，优先看 `wiki/
 - 本地配置页只绑定 `127.0.0.1`。
 - 本地配置写入 `.vault-meta/`，该目录不会进入 git。
 - `.agent/external/` 用于放第三方依赖 checkout，也不会进入 git。
-- 原始 session logs 仍留在本机原位置；本 repo 只保存整理后的轻量 wiki 页面和导航。
-- Session 图片先写入 gitignored 的 `.vault-meta/captures/assets/`；只有被 Daily Wiki 选中的视觉证据才复制到 `wiki/assets/`。公开 repo 前同样需要检查这些图片是否包含私人信息。
+- 原始 session logs 仍留在本机原位置；gitignored 的 `.vault-meta/` 保存可重新生成的 Evidence Snapshot，wiki 保存整理后的轻量页面和导航。
 - 生成的 Daily Wiki 可能包含你的私有项目记忆。公开 starter repo 时，不要 commit 个人生成的 wiki 内容。
 
 ## 配置和安装
@@ -136,17 +134,14 @@ Codex 会通过 `engineering-memory-loader` 读取本地 wiki，优先看 `wiki/
 scripts/
   config-ui.sh                  # local config web entry
   setup.sh                      # skill setup entry
-  capture-ai-chats.mjs          # deterministic evidence capture
-  daily-memory-workflow.mjs     # bounded Daily prepare and verify orchestration
+  capture-ai-chats.mjs          # deterministic bounded Evidence Snapshot
+  daily-memory-workflow.mjs     # one-shot Snapshot prepare and Daily verify
   wiki-lint.mjs                 # deterministic wiki health report
 
 wiki/
   sources/ai-chats/             # Daily Wiki pages
-  assets/ai-chats/              # selected durable screenshots
-  canvases/ai-chats/            # optional derived visual maps
   concepts/                     # reusable engineering lessons
-  guardrails/                   # guardrail triggers and behavior rules
-  index.md / hot.md / log.md    # navigation and recent context
+  index.md / log.md             # stable routing and operation log
 ```
 
 ## 灵感来源
@@ -158,5 +153,5 @@ wiki/
 组合使用体验更好：
 
 - [Obsidian](https://github.com/obsidianmd/obsidian-releases)：本地 Markdown vault 和知识库应用。
-- [Obsidian Skills](https://github.com/kepano/obsidian-skills)：统一提供 Obsidian Markdown 和 Canvas 能力；Daily workflow 在视觉证据或复杂链路场景下按需使用。
+- [Obsidian Skills](https://github.com/kepano/obsidian-skills)：提供 Obsidian Markdown 和 Canvas 能力，可在用户明确需要图示时单独使用。
 - [Claude Obsidian](https://github.com/AgriciDaniel/claude-obsidian)：提供 `wiki-query` 和 self-organizing wiki workflow。

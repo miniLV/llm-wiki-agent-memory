@@ -12,13 +12,11 @@ if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
   process.exit(1);
 }
 
-const captureVersion = 9;
+const snapshotLimitBytes = 96 * 1024;
 const memoryDerivedMarker = "<!-- llm-wiki-memory:derived -->";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputPath = process.env.LLM_WIKI_CAPTURE_OUTPUT_PATH ||
   path.join(repoRoot, ".vault-meta", "captures", "ai-chats", `${date}.capture.json`);
-const captureAssetDir = process.env.LLM_WIKI_CAPTURE_ASSET_DIR ||
-  path.join(repoRoot, ".vault-meta", "captures", "assets", "ai-chats", date);
 const configPath = process.env.LLM_WIKI_CAPTURE_CONFIG_PATH ||
   path.join(repoRoot, ".vault-meta", "config.json");
 const captureEndTimestamp = String(process.env.LLM_WIKI_CAPTURE_END_TIMESTAMP || "").trim();
@@ -41,12 +39,6 @@ function readConfig() {
   } catch {
     return {};
   }
-}
-
-function expandHome(p) {
-  if (p === "~") return home;
-  if (p.startsWith("~/")) return path.join(home, p.slice(2));
-  return p;
 }
 
 function walk(dir, matcher = () => true) {
@@ -189,15 +181,6 @@ function recordText(record) {
   return "";
 }
 
-function recordContentParts(record) {
-  return [
-    record.content,
-    record.message?.content,
-    record.payload?.content,
-    record.item?.content,
-  ].flatMap((candidate) => Array.isArray(candidate) ? candidate : []);
-}
-
 function isToolResultRecord(record) {
   const candidates = [
     record.content,
@@ -210,114 +193,6 @@ function isToolResultRecord(record) {
     candidate.length > 0 &&
     candidate.every((part) => String(part?.type || "").toLowerCase().includes("tool_result"))
   );
-}
-
-function imageSource(part) {
-  if (!part || typeof part !== "object") return null;
-  const type = String(part.type || "").toLowerCase();
-  const imageUrl = typeof part.image_url === "string"
-    ? part.image_url
-    : firstString(part.image_url?.url, part.url, part.file_path, part.path);
-  if (imageUrl && (type.includes("image") || part.image_url || part.file_path)) {
-    return { value: imageUrl, mediaType: firstString(part.media_type, part.mime_type), detail: firstString(part.detail) };
-  }
-  if (type.includes("image") && part.source?.type === "base64" && part.source?.data) {
-    const mediaType = firstString(part.source.media_type, part.media_type, "image/png");
-    return {
-      value: `data:${mediaType};base64,${part.source.data}`,
-      mediaType,
-      detail: firstString(part.detail),
-    };
-  }
-  return null;
-}
-
-function imageExtension(mediaType, source = "") {
-  const normalized = String(mediaType || "").toLowerCase();
-  const byType = {
-    "image/png": "png",
-    "image/jpeg": "jpg",
-    "image/jpg": "jpg",
-    "image/gif": "gif",
-    "image/webp": "webp",
-    "image/svg+xml": "svg",
-  };
-  if (byType[normalized]) return byType[normalized];
-  const ext = path.extname(String(source).split(/[?#]/)[0]).slice(1).toLowerCase();
-  return ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext) ? ext.replace("jpeg", "jpg") : "png";
-}
-
-function persistVisualSource(source) {
-  const maxBytes = 20 * 1024 * 1024;
-  let buffer = null;
-  let mediaType = source.mediaType;
-  let sourceLabel = "embedded session image";
-  const dataMatch = source.value.match(/^data:([^;,]+);base64,([\s\S]+)$/);
-
-  try {
-    if (dataMatch) {
-      mediaType = mediaType || dataMatch[1];
-      buffer = Buffer.from(dataMatch[2], "base64");
-    } else {
-      const expanded = expandHome(source.value.replace(/^file:\/\//, ""));
-      if (path.isAbsolute(expanded) && exists(expanded)) {
-        buffer = fs.readFileSync(expanded);
-        sourceLabel = compactPath(expanded);
-      }
-    }
-  } catch {
-    return { warning: "visual_capture_failed", source: sourceLabel };
-  }
-
-  if (!buffer) {
-    return {
-      warning: /^https?:\/\//.test(source.value) ? "remote_visual_not_cached" : "visual_source_unavailable",
-      source: /^https?:\/\//.test(source.value) ? source.value : sourceLabel,
-    };
-  }
-  if (buffer.length === 0 || buffer.length > maxBytes) {
-    return { warning: "visual_size_out_of_range", source: sourceLabel, bytes: buffer.length };
-  }
-
-  const hash = crypto.createHash("sha256").update(buffer).digest("hex");
-  const extension = imageExtension(mediaType, source.value);
-  const target = path.join(captureAssetDir, `${hash.slice(0, 16)}.${extension}`);
-  fs.mkdirSync(captureAssetDir, { recursive: true });
-  if (!exists(target)) fs.writeFileSync(target, buffer);
-  return {
-    captureFile: compactPath(target),
-    mediaType: mediaType || `image/${extension}`,
-    bytes: buffer.length,
-    detail: source.detail,
-    source: sourceLabel,
-    hash,
-  };
-}
-
-function recordVisualEvidence(records) {
-  const visuals = [];
-  const seen = new Set();
-  let truncated = false;
-  for (const record of records) {
-    for (const part of recordContentParts(record)) {
-      const source = imageSource(part);
-      if (!source) continue;
-      if (visuals.length >= 8) {
-        truncated = true;
-        continue;
-      }
-      const visual = persistVisualSource(source);
-      const key = visual.hash || `${visual.source}:${visual.warning}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      visuals.push({
-        ...visual,
-        timestamp: recordTimestamp(record),
-        context: safeSnippet(recordText(record), 180),
-      });
-    }
-  }
-  return { visuals, truncated };
 }
 
 function recordRole(record) {
@@ -418,22 +293,11 @@ function normalizedSnippet(text) {
     .replace(/^# In app browser:[\s\S]*?## My request for Codex:\s*/i, "")
     .replace(/::(?:inbox-item|git-stage|git-commit)\{[^}]*\}/g, "")
     .replace(/\s+/g, " ")
-    .replace(/`/g, "'")
     .trim();
 }
 
-function safeSnippet(text, maxChars = 240) {
-  const normalized = normalizedSnippet(text);
-  if (normalized.length <= maxChars) return normalized;
-  const separator = " … [truncated] … ";
-  const tailLength = Math.min(240, Math.floor(maxChars / 3));
-  const headLength = Math.max(1, maxChars - tailLength - separator.length);
-  return `${normalized.slice(0, headLength)}${separator}${normalized.slice(-tailLength)}`;
-}
-
-function highlightScore(text) {
+function hasEvidenceSignal(text) {
   const value = String(text || "");
-  let score = Math.min(3, Math.floor(value.length / 180));
   const patterns = [
     /\b[A-Z][A-Z0-9]+-\d+\b/i,
     /\b(?:error|failed|failure|root cause|fixed|decision|conclusion|verify|verified|blocker|source map|runtime|callback|build)\b/i,
@@ -441,8 +305,7 @@ function highlightScore(text) {
     /`[^`]+`/,
     /(?:^|\s)[~/.][^\s]+/,
   ];
-  for (const pattern of patterns) if (pattern.test(value)) score += 2;
-  return score;
+  return patterns.some((pattern) => pattern.test(value));
 }
 
 function isAssistantOutcome(record) {
@@ -450,35 +313,15 @@ function isAssistantOutcome(record) {
   return phase === "final_answer" || phase === "end_turn";
 }
 
-function modelTurnScore(turn) {
-  const text = [
-    turn.goal,
-    ...(turn.outcomes || []).map((item) => item.text),
-    ...(turn.delegated_outcomes || []).map((item) => item.text),
-    turn.decisive_evidence?.text,
-    turn.latest_unresolved_state?.text,
-  ].filter(Boolean).join(" ");
-  let score = highlightScore(text);
-  const highValuePatterns = [
-    /\b(?:commit|push|merged?|root cause|verified|verification|tests? pass|blocked?|regression|final)\b/i,
-    /(?:最终|结论|根因|提交|验证通过|测试通过|阻塞|回归|修复|决定|不(?:要|是|对)|过度设计|必须)/,
-  ];
-  for (const pattern of highValuePatterns) if (pattern.test(text)) score += 3;
-  if (turn.unresolved) score += 2;
-  return score;
-}
-
 function normalizedConversation(records) {
   const messages = records
-    .map((record, index) => {
+    .map((record) => {
       const text = recordText(record);
       const role = isUserRecord(record) ? "user" : isAssistantRecord(record) ? "assistant" : "";
       return {
-        index,
         role,
         text,
         timestamp: recordTimestamp(record),
-        score: highlightScore(text),
         outcome: role === "assistant" && isAssistantOutcome(record),
         delegated: isDelegatedOutcomeRecord(record),
         record,
@@ -496,8 +339,7 @@ function normalizedConversation(records) {
     .map((item) => ({
       kind: item.delegated ? "delegated" : "final",
       timestamp: item.timestamp,
-      text: safeSnippet(item.text, item.delegated ? 320 : 520),
-      score: highlightScore(item.text),
+      text: normalizedSnippet(item.text),
     }));
 
   const turns = userPositions.map((start, turn) => {
@@ -507,38 +349,37 @@ function normalizedConversation(records) {
     const outcomes = assistants.filter((item) => item.outcome);
     const delegated = assistants.filter((item) => item.delegated);
     const evidence = assistants
-      .filter((item) => !item.outcome && !item.delegated && item.score >= 4)
-      .sort((a, b) => b.score - a.score || b.index - a.index)[0];
+      .filter((item) => !item.outcome && !item.delegated && hasEvidenceSignal(item.text))
+      .at(-1);
     const fallback = outcomes.length === 0 ? assistants.at(-1) : null;
 
-    const compactTurn = {
+    const normalizedTurn = {
       turn_number: turn + 1,
-      goal: safeSnippet(user.text, 240),
+      goal: normalizedSnippet(user.text),
       goal_timestamp: user.timestamp,
       outcomes: outcomes.map((item) => ({
         timestamp: item.timestamp,
-        text: safeSnippet(item.text, 520),
+        text: normalizedSnippet(item.text),
       })),
       delegated_outcomes: delegated.map((item) => ({
         timestamp: item.timestamp,
-        text: safeSnippet(item.text, 320),
+        text: normalizedSnippet(item.text),
       })),
       unresolved: outcomes.length === 0,
     };
     if (evidence) {
-      compactTurn.decisive_evidence = {
+      normalizedTurn.decisive_evidence = {
         timestamp: evidence.timestamp,
-        text: safeSnippet(evidence.text, 320),
+        text: normalizedSnippet(evidence.text),
       };
     }
     if (fallback) {
-      compactTurn.latest_unresolved_state = {
+      normalizedTurn.latest_unresolved_state = {
         timestamp: fallback.timestamp,
-        text: safeSnippet(fallback.text, 320),
+        text: normalizedSnippet(fallback.text),
       };
     }
-    compactTurn.score = modelTurnScore(compactTurn);
-    return compactTurn;
+    return normalizedTurn;
   });
   return {
     turns,
@@ -547,7 +388,6 @@ function normalizedConversation(records) {
     outcomeCount: messages.filter((item) => item.outcome).length,
     delegatedOutcomeCount: messages.filter((item) => item.delegated).length,
     turnsWithoutOutcome: turns.filter((turn) => turn.unresolved).length,
-    textTruncated: messages.some((item) => normalizedSnippet(item.text).length > (item.role === "user" ? 240 : item.outcome ? 520 : 320)),
   };
 }
 
@@ -618,17 +458,14 @@ function sessionEvidence(file, agent, sourceKind) {
   const model = evidenceRecords.map(recordModel).find(Boolean) || "";
   const timestamps = evidenceRecords.map(recordTimestamp).filter(Boolean);
   const userRecords = evidenceRecords.filter(isUserRecord);
-  const userTexts = userRecords.map(recordText).filter(Boolean);
   const meaningfulUserTexts = userRecords
     .filter((record) => !isInjectedUserRecord(record))
     .map(recordText)
     .filter(Boolean);
   const assistantTexts = evidenceRecords.filter(isAssistantRecord).map(recordText).filter(Boolean);
   const derived = containsVaultAnswer(evidenceRecords);
-  const { visuals, truncated: visualsTruncated } = recordVisualEvidence(evidenceRecords);
   const conversation = normalizedConversation(evidenceRecords);
   const firstGoal = meaningfulUserTexts.find((text) => text.length > 8) || "";
-  const lastGoal = [...meaningfulUserTexts].reverse().find((text) => text.length > 8) || "";
   const repoName = cwd ? path.basename(cwd) : "unknown-repo";
   const warnings = [];
 
@@ -640,12 +477,6 @@ function sessionEvidence(file, agent, sourceKind) {
   if (!firstGoal) warnings.push("missing_user_goal");
   if (meaningfulUserTexts.length <= 1 && assistantTexts.length === 0) warnings.push("low_signal");
   if (meaningfulUserTexts.some(isSelfReferentialText)) warnings.push("self_referential");
-  if (conversation.textTruncated) warnings.push("normalized_text_truncated");
-  if (visuals.length > 0) warnings.push("visual_evidence_present");
-  if (visualsTruncated) warnings.push("visual_evidence_truncated");
-  for (const visual of visuals) {
-    if (visual.warning) warnings.push(visual.warning);
-  }
   return {
     kind: "session",
     evidenceId: sessionEvidenceId(file, sourceKind),
@@ -656,7 +487,6 @@ function sessionEvidence(file, agent, sourceKind) {
     dateMatch,
     cwd: cwd ? compactPath(cwd) : "",
     repoName,
-    firstTimestamp: timestamps[0] || "",
     lastTimestamp: timestamps[timestamps.length - 1] || "",
     recordCount: evidenceRecords.length,
     userTurnCount: meaningfulUserTexts.length,
@@ -664,11 +494,8 @@ function sessionEvidence(file, agent, sourceKind) {
     finalOutcomeCount: conversation.outcomeCount,
     delegatedOutcomeCount: conversation.delegatedOutcomeCount,
     turnsWithoutOutcome: conversation.turnsWithoutOutcome,
-    firstGoal: safeSnippet(firstGoal || "No clear user goal detected."),
-    lastGoal: safeSnippet(lastGoal || "No clear final user goal detected."),
     turns: conversation.turns,
     carryoverOutcomes: conversation.carryoverOutcomes,
-    visuals,
     warnings,
   };
 }
@@ -723,12 +550,11 @@ const internalSubagentSessionsSkipped = sessionResults.filter(
 
 const allWarnings = [...new Set(sessions.flatMap((session) => session.warnings))];
 if (duplicateEvidenceIds.size > 0) allWarnings.push("duplicate_session_source_filtered");
-const visualEvidenceCount = sessions.reduce((sum, session) => sum + session.visuals.length, 0);
 const hasVaultAnswer = sessions.some((session) => session.containsVaultAnswer);
 if (sessions.length === 0) allWarnings.push("no_sources");
 
 const capture = {
-  capture_version: captureVersion,
+  snapshot_kind: "bounded_daily_evidence",
   date,
   generated_at: new Date().toISOString(),
   capture_end_timestamp: captureEndTimestamp || null,
@@ -736,11 +562,11 @@ const capture = {
   daily_wiki_target: dailyWikiPath,
   capture_file: compactPath(outputPath),
   evidence_card_count: sessions.length,
-  source_count: sessions.length,
   internal_subagent_sessions_skipped: internalSubagentSessionsSkipped,
   contains_vault_answer: hasVaultAnswer,
-  visual_evidence_count: visualEvidenceCount,
   warnings: allWarnings,
+  schema: fs.readFileSync(path.join(repoRoot, "SCHEMA.md"), "utf8").trimEnd(),
+  daily_template: fs.readFileSync(path.join(repoRoot, "wiki", "templates", "Daily AI Chat Summary Template.md"), "utf8").trimEnd(),
   cards: sessions.map((session) => ({
     kind: "agent_session",
     evidence_id: session.evidenceId,
@@ -751,10 +577,7 @@ const capture = {
     date_match: session.dateMatch,
     model: session.model,
     contains_vault_answer: session.containsVaultAnswer,
-    first_timestamp: session.firstTimestamp,
     last_timestamp: session.lastTimestamp,
-    first_goal: session.firstGoal,
-    last_goal: session.lastGoal,
     counts: {
       raw_records: session.recordCount,
       user_turns: session.userTurnCount,
@@ -767,19 +590,57 @@ const capture = {
     warnings: session.warnings,
     turns: session.turns,
     carryover_outcomes: session.carryoverOutcomes,
-    visuals: session.visuals.map((visual) => ({
-      capture_file: visual.captureFile || null,
-      source: visual.source || null,
-      media_type: visual.mediaType || null,
-      bytes: visual.bytes || null,
-      detail: visual.detail || null,
-      timestamp: visual.timestamp || null,
-      context: visual.context || null,
-      hash: visual.hash || null,
-      warning: visual.warning || null,
-    })),
   })),
 };
+
+function renderSnapshot(selectedTurns) {
+  const totalTurns = capture.cards.reduce((count, card) => count + card.turns.length, 0);
+  const includedTurns = selectedTurns.reduce((count, indexes) => count + indexes.size, 0);
+  const omittedTurns = totalTurns - includedTurns;
+  const warnings = omittedTurns > 0
+    ? [...new Set([...capture.warnings, "snapshot_turns_omitted"])]
+    : capture.warnings;
+  const snapshot = {
+    ...capture,
+    included_turns: includedTurns,
+    omitted_turns: omittedTurns,
+    snapshot_mode: omittedTurns > 0 ? "whole-turn-trim" : "all-turns",
+    warnings,
+    cards: capture.cards.map((card, cardIndex) => {
+      const selected = selectedTurns[cardIndex];
+      const turns = card.turns.filter((_, turnIndex) => selected.has(turnIndex));
+      return {
+        ...card,
+        counts: {
+          ...card.counts,
+          included_turns: turns.length,
+          omitted_turns: card.turns.length - turns.length,
+        },
+        turns,
+      };
+    }),
+  };
+  return `${JSON.stringify(snapshot, null, 2)}\n`;
+}
+
+function buildSnapshot() {
+  const selectedTurns = capture.cards.map((card) => new Set(card.turns.map((_, index) => index)));
+  const candidates = capture.cards.flatMap((card, cardIndex) => card.turns.slice(0, -1).map((turn, turnIndex) => ({
+    cardIndex,
+    turnIndex,
+    unresolved: Boolean(turn.unresolved),
+  }))).sort((a, b) => Number(a.unresolved) - Number(b.unresolved) || a.turnIndex - b.turnIndex || a.cardIndex - b.cardIndex);
+  let text = renderSnapshot(selectedTurns);
+
+  for (const candidate of candidates) {
+    if (Buffer.byteLength(text) <= snapshotLimitBytes) break;
+    selectedTurns[candidate.cardIndex].delete(candidate.turnIndex);
+    text = renderSnapshot(selectedTurns);
+  }
+  return text;
+}
+
+const snapshotText = buildSnapshot();
 fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-fs.writeFileSync(outputPath, `${JSON.stringify(capture, null, 2)}\n`, "utf8");
+fs.writeFileSync(outputPath, snapshotText, "utf8");
 console.log(`Wrote ${compactPath(outputPath)}`);

@@ -6,8 +6,8 @@
 
 ```text
 External: Codex / Claude Code session logs (immutable source of truth)
-Capture:  .vault-meta/captures/ai-chats/YYYY-MM-DD.capture.json (regenerable machine evidence)
-Wiki:     Daily pages -> Concepts + Agent Behavior Rules
+Snapshot: .vault-meta/captures/ai-chats/YYYY-MM-DD.capture.json (regenerable bounded evidence)
+Wiki:     Daily pages -> Reviewed Concepts
 Query:    index router -> runtime file scan -> cited read-only answer
 ```
 
@@ -23,21 +23,24 @@ Skills do not redefine the schema:
 
 ## Write Path
 
-1. Capture reads Codex and Claude Code JSONL, slices records to the requested local
-   date, skips Codex worker transcripts while retaining their delivered outcomes in
-   the parent session, removes injected/tool-result noise, preserves every meaningful
-   user turn and final outcome plus one evidence update per turn, and writes one
-   versioned JSON Capture with explicit normalization/truncation metadata.
-2. Local Node code derives one ephemeral packet capped at 96 KiB. Every Capture Card
-   remains represented. If all compact turns do not fit, Node removes lower-scored
-   turns first while protecting latest, unresolved, and high-score turns.
-3. Daily reads that packet once and writes one human-readable page with the shape
-   defined by `SCHEMA.md`; local verification appends `wiki/log.md`. Each key topic
-   links one to three representative Capture Cards, which identify Codex or Claude
+1. The Snapshot builder reads Codex and Claude Code JSONL, which remain the complete
+   fact source, slices records to the requested local date, skips Codex worker
+   transcripts while retaining their delivered outcomes in
+   the parent session, and removes injected/tool-result noise. Per turn it keeps the
+   goal, final and delegated outcomes, latest unresolved state, and a representative
+   high-signal intermediate update. It writes one lossy, regenerable JSON Evidence
+   Snapshot with a fixed internal budget. Every Evidence Card remains represented; if the Snapshot
+   is oversized, Node omits whole older completed turns before unresolved work while
+   retaining each card's identity, original session path, and latest turn.
+2. `prepare --emit-snapshot` persists the Snapshot and emits those exact bytes once.
+   This is a delivery action, not another evidence layer. If protected evidence still
+   exceeds the budget, prepare skips and emits nothing.
+3. Daily reads that emitted Snapshot once and writes one human-readable page with the
+   shape defined by `SCHEMA.md`; local verification appends `wiki/log.md`. Each key topic
+   links one to three representative Evidence Cards, which identify Codex or Claude
    Code and retain the original session path.
 4. Reconcile reads the latest seven Daily pages by default, runs
-   `scripts/wiki-lint.mjs`, updates or merges Concepts, and keeps a maximum of 10
-   directly linked Behavior Rules.
+   `scripts/wiki-lint.mjs`, and updates or merges Reviewed Concepts.
 
 Scheduled writes are external. Codex App Automations is currently the supported
 scheduled writer; one Vault keeps one scheduled writer.
@@ -47,8 +50,7 @@ scheduled writer; one Vault keeps one scheduled writer.
 1. The global loader follows its real symlink to resolve `VAULT_ROOT`.
 2. It loads repo-local `claude-obsidian/wiki-query`, `SCHEMA.md`, and `wiki/index.md`.
 3. It lists the newest Daily files for current questions, reads explicit date ranges
-   directly, exact-searches Daily/Concept files for engineering keys, or checks
-   `Agent Behavior Rules.md` for repeated failures.
+   directly, or exact-searches Daily/Concept files for engineering keys.
 4. It synthesizes and cites the smallest useful set of Wiki pages. Raw sessions are
    opened only for exact output, disputed evidence, or an explicit audit.
 
@@ -58,8 +60,9 @@ normal cross-repo lookup.
 ## Provenance
 
 The query path emits the hidden marker owned by `SCHEMA.md` when Vault content
-materially contributes. Capture reduces this to one binary flag. A Daily page with
-that flag is valid context but is not automatically independent promotion evidence.
+materially contributes. The Evidence Snapshot reduces this to one binary flag. A
+Daily page with that flag is valid context but is not automatically independent
+promotion evidence.
 
 This deliberately conservative page-level rule replaces origin states, aggregate
 counts, and per-item provenance labels.
@@ -70,10 +73,9 @@ counts, and per-item provenance labels.
 
 - core files exist;
 - Daily frontmatter and section shape match `SCHEMA.md`;
-- every Daily key topic links exact Evidence Cards from its dated capture;
+- every Daily key topic links exact Evidence Cards from its dated Evidence Snapshot;
 - wikilinks resolve;
 - Concepts have visible Daily evidence;
-- Behavior Rules stay within the cap and link to evidence.
 
 Content quality, contradiction resolution, promotion value, and demotion remain LLM
 judgment in Reconcile. There is no automatic diagram branch, hot cache, nested index

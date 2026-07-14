@@ -12,6 +12,7 @@ const jsonReportPath = path.join(reviewDir, "wiki-lint-latest.json");
 const strict = process.argv.includes("--strict");
 const config = JSON.parse(read(path.join(repoRoot, ".vault-meta", "config.json")) || "{}");
 const detailedDaily = config.dailySummaryDetail !== "concise";
+const snapshotLimitBytes = 96 * 1024;
 
 const dailyFields = ["date", "lookup_keys", "confidence", "contains_vault_answer"];
 const issues = [];
@@ -93,37 +94,7 @@ function headingPreamble(text, heading) {
   return (firstTopic === -1 ? lines : lines.slice(0, firstTopic)).filter((line) => line.trim());
 }
 
-function legacyCaptureEvidenceCards(text) {
-  const cards = new Map();
-  const duplicateIds = new Set();
-  const invalidCards = [];
-  const containsVaultAnswer = text.match(/^contains_vault_answer:\s*(true|false)\s*$/m)?.[1];
-  for (const chunk of text.split(/(?=<a id=")/)) {
-    const anchor = chunk.match(/^<a id="([^"]+)"><\/a>/)?.[1];
-    if (!anchor) continue;
-    const evidenceId = chunk.match(/^- Evidence ID:\s*(\S+)\s*$/m)?.[1];
-    const agent = chunk.match(/^- Agent:\s*(.+?)\s*$/m)?.[1];
-    const sourceFile = chunk.match(/^- Source file:\s*(.+?)\s*$/m)?.[1];
-    if (!evidenceId) continue;
-    if (cards.has(evidenceId)) duplicateIds.add(evidenceId);
-    cards.set(evidenceId, { anchor, agent, sourceFile });
-    if (anchor !== evidenceId || !/^(?:codex|claude)-[a-z0-9-]+$/.test(evidenceId) || !["Codex", "Claude Code"].includes(agent) || !sourceFile) {
-      invalidCards.push(evidenceId);
-    }
-  }
-  return {
-    cards,
-    duplicateIds,
-    invalidCards,
-    captureVersion: Number(text.match(/^capture_version:\s*(\d+)\s*$/m)?.[1] || 0),
-    captureDate: "",
-    evidenceCardCount: Number(text.match(/^- Evidence cards:\s*(\d+)/m)?.[1] || cards.size),
-    containsVaultAnswer: containsVaultAnswer ? containsVaultAnswer === "true" : null,
-    invalidDocument: false,
-  };
-}
-
-function jsonCaptureEvidenceCards(text) {
+function snapshotEvidenceCards(text) {
   let capture;
   try {
     capture = JSON.parse(text);
@@ -132,7 +103,6 @@ function jsonCaptureEvidenceCards(text) {
       cards: new Map(),
       duplicateIds: new Set(),
       invalidCards: [],
-      captureVersion: 0,
       captureDate: "",
       evidenceCardCount: 0,
       containsVaultAnswer: null,
@@ -158,11 +128,12 @@ function jsonCaptureEvidenceCards(text) {
     cards,
     duplicateIds,
     invalidCards,
-    captureVersion: Number(capture.capture_version || 0),
     captureDate: String(capture.date || ""),
     evidenceCardCount: Number(capture.evidence_card_count ?? cards.size),
     containsVaultAnswer: typeof capture.contains_vault_answer === "boolean" ? capture.contains_vault_answer : null,
-    invalidDocument: !Array.isArray(capture.cards),
+    invalidDocument: capture.snapshot_kind !== "bounded_daily_evidence"
+      || !Array.isArray(capture.cards)
+      || Buffer.byteLength(text) > snapshotLimitBytes,
   };
 }
 
@@ -222,32 +193,20 @@ function checkDailyPages() {
       add("error", "daily-raw-session-source", file, "Daily must link capture Evidence Cards, not raw Codex or Claude JSONL paths.");
     }
 
-    const jsonCapturePath = path.join(repoRoot, ".vault-meta", "captures", "ai-chats", `${filenameDate}.capture.json`);
-    const legacyCapturePath = path.join(repoRoot, ".vault-meta", "captures", "ai-chats", `${filenameDate}.md`);
-    const jsonTarget = `../../../.vault-meta/captures/ai-chats/${filenameDate}.capture.json`;
-    const legacyTarget = `../../../.vault-meta/captures/ai-chats/${filenameDate}.md`;
-    const usesJsonCapture = text.includes(`${jsonTarget}#`);
-    const usesLegacyCapture = text.includes(`${legacyTarget}#`);
-    const capturePath = usesJsonCapture && fs.existsSync(jsonCapturePath)
-      ? jsonCapturePath
-      : usesLegacyCapture && fs.existsSync(legacyCapturePath)
-        ? legacyCapturePath
-        : fs.existsSync(jsonCapturePath) ? jsonCapturePath : legacyCapturePath;
-    const jsonCapture = capturePath === jsonCapturePath;
+    const capturePath = path.join(repoRoot, ".vault-meta", "captures", "ai-chats", `${filenameDate}.capture.json`);
+    const captureTarget = `../../../.vault-meta/captures/ai-chats/${filenameDate}.capture.json`;
     const capture = read(capturePath);
-    const parsedCapture = jsonCapture ? jsonCaptureEvidenceCards(capture) : legacyCaptureEvidenceCards(capture);
-    const { cards: captureCards, duplicateIds, invalidCards, captureVersion, captureDate, evidenceCardCount, containsVaultAnswer, invalidDocument } = parsedCapture;
+    const parsedCapture = snapshotEvidenceCards(capture);
+    const { cards: captureCards, duplicateIds, invalidCards, captureDate, evidenceCardCount, containsVaultAnswer, invalidDocument } = parsedCapture;
     const topics = headingBlocks(text, "关键会话");
     const dailyContainsVaultAnswer = String(fields.get("contains_vault_answer") || "").trim();
     if (/^(true|false)$/.test(dailyContainsVaultAnswer) && containsVaultAnswer !== null && (dailyContainsVaultAnswer === "true") !== containsVaultAnswer) {
       add("error", "daily-derived-flag", file, `contains_vault_answer must match Capture: expected ${containsVaultAnswer}.`);
     }
     if (!capture) add("error", "daily-capture", file, `Dated capture does not exist: ${relative(capturePath)}.`);
-    else if (invalidDocument) add("error", "daily-capture", file, `Dated capture is not a valid ${jsonCapture ? "JSON" : "Markdown"} Capture: ${relative(capturePath)}.`);
-    else if (jsonCapture && captureVersion < 9) add("error", "daily-capture-version", file, `JSON Capture must be version 9 or newer, found ${captureVersion || "none"}.`);
-    else if (!jsonCapture && captureVersion < 8) add("error", "daily-capture-version", file, `Legacy Markdown capture must be version 8 or newer, found ${captureVersion || "none"}.`);
-    if (jsonCapture && captureDate !== filenameDate) {
-      add("error", "daily-capture-date", file, `JSON Capture date must match Daily filename: expected ${filenameDate}, found ${captureDate || "none"}.`);
+    else if (invalidDocument) add("error", "daily-capture", file, `Dated capture is not a valid Evidence Snapshot: ${relative(capturePath)}.`);
+    if (captureDate !== filenameDate) {
+      add("error", "daily-capture-date", file, `Evidence Snapshot date must match Daily filename: expected ${filenameDate}, found ${captureDate || "none"}.`);
     }
     for (const evidenceId of duplicateIds) add("error", "daily-capture-card", file, `Dated capture has duplicate Evidence ID: ${evidenceId}.`);
     for (const evidenceId of invalidCards) add("error", "daily-capture-card", file, `Dated capture has malformed Evidence Card: ${evidenceId}.`);
@@ -271,9 +230,8 @@ function checkDailyPages() {
       }
       const linkedIds = new Set();
       for (const [, label, target, evidenceId] of links) {
-        const canonicalTarget = jsonCapture ? jsonTarget : legacyTarget;
-        if (target !== canonicalTarget) {
-          add("error", "daily-topic-evidence", file, `Topic "${topic.title}" evidence must use ${canonicalTarget}, not ${target}.`);
+        if (target !== captureTarget) {
+          add("error", "daily-topic-evidence", file, `Topic "${topic.title}" evidence must use ${captureTarget}, not ${target}.`);
           continue;
         }
         if (linkedIds.has(evidenceId)) add("error", "daily-topic-evidence", file, `Topic "${topic.title}" links Evidence ID more than once: ${evidenceId}.`);

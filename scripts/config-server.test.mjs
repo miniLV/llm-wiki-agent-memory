@@ -239,7 +239,9 @@ test("config server copies UTF-8 prompts when launchd provides no locale", async
   assert.match(prompt, /^整理最近一周的 LLM wiki memory。/);
   assert.match(prompt, /为这个日期启动一个新的子 agent（独立线程\/上下文，不是父 agent 自己继续处理）/);
   assert.match(prompt, /只传 repo、日期和 skill 路径，不携带前几天的编译内容/);
-  assert.match(prompt, /只消费 prepare 输出的 bounded packet/);
+  assert.match(prompt, /只消费 `prepare --emit-snapshot` 一次输出的 bounded Evidence Snapshot/);
+  assert.match(prompt, /禁止回读已落盘 Snapshot/);
+  assert.match(prompt, /Evidence Snapshot 路径/);
   assert.match(prompt, /included \/ omitted turn 数/);
   assert.match(prompt, /7 个日期都完成或明确 skipped 后/);
   assert.match(prompt, /禁止搜索或回放旧 agent session 里的 reconcile 结果/);

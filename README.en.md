@@ -22,16 +22,15 @@ Use it when:
 ### Architecture Highlights
 
 - Key-driven synthesis: the daily loop extracts Jira / issue / work item ids, features, repos, tools, and aliases, so inputs like `project1`, `ABC-123`, `PROJ42-987`, `AI VBG`, or `aivbg` can connect related sessions over time.
-- Bounded but complete: capture keeps a chronological set of high-signal conversation highlights per session. Daily Wiki preserves important attempts, alternatives, evidence changes, conclusions, and unresolved work instead of collapsing a complex session into one sentence.
+- One bounded input: raw sessions remain the complete fact source. Each Daily run creates one regenerable bounded Evidence Snapshot and sends those same bytes to the agent once. If necessary, it omits whole older completed turns before unresolved work instead of compacting fields a second time.
 - Historical rollups: when one key matches five past sessions, the agent filters low-relevance matches and summarizes the timeline, decisions, repeated problems, current state, and next steps instead of returning five links.
-- Two-layer memory: Daily Wiki pages keep concrete evidence and lookup keys; Weekly Review promotes only recurring topics into concepts / guardrails and keeps `index.md` / `hot.md` useful for future cross-session rollups.
-- Visual evidence: daily capture extracts session screenshots into a local evidence inbox and scores their evidence value before promotion. When relationship complexity crosses the threshold, the workflow automatically creates or updates a topic Canvas; simpler chains use Mermaid or prose, while searchable text remains canonical.
-- Anti-bloat rules: ordinary ticket / project keys are not promoted into durable memory by default; they are retrieved from Daily Wiki on demand. Only stable parent topics or long-running workstreams enter the index. Behavior rules are capped at 10 and must be merged, demoted, or pruned when full.
-- Auditability: every Daily key topic links only its supporting capture Evidence Cards. Each card identifies Codex or Claude Code and retains the original session path; raw JSONL is opened only for exact output or disputed audits.
+- Two-layer memory: Daily Wiki pages keep concrete evidence and lookup keys; Weekly Review promotes only recurring, reviewed topics into Concepts.
+- Anti-bloat rules: ordinary ticket / project keys are not promoted into durable memory by default. Only stable parent topics or long-running workstreams become Concepts.
+- Auditability: every Daily key topic links only its supporting Snapshot Evidence Cards. Each card identifies Codex or Claude Code and retains the original session path; raw JSONL is opened only for exact output or disputed audits.
 
 ### Architecture Diagrams
 
-Architecture: local sessions enter an evidence inbox, compile into Daily Wiki pages, get promoted by Weekly Review, and return to future tasks through the memory loader.
+Architecture: local sessions produce one bounded Evidence Snapshot, compile into Daily Wiki pages, get promoted by Weekly Review, and return to future tasks through the memory loader.
 
 ![LLM Wiki Agent Memory architecture](docs/agent-memory-arch-sketch-en.png)
 
@@ -67,7 +66,7 @@ The browser opens a local web page bound to `127.0.0.1`. For the first run, foll
 
 | Area | Current support |
 |---|---|
-| Sources | Supports Codex, Claude Code, and custom folders. Codex reads `~/.codex/sessions/` and `~/.codex/archived_sessions/`; Claude Code reads `~/.claude/projects/`. Session screenshots first enter the local evidence inbox, then Daily Wiki promotes only useful visual evidence. |
+| Sources | Supports Codex, Claude Code, and custom folders. Codex reads `~/.codex/sessions/` and `~/.codex/archived_sessions/`; Claude Code reads `~/.claude/projects/`. Raw sessions stay in place; Daily receives one bounded Evidence Snapshot. |
 | Scheduled runner | Currently only Codex App Automations runs the daily / weekly jobs. To avoid double writes, one vault should have one scheduled writer; Codex CLI + launchd / cron and Claude Code runner support are still in progress. |
 
 ### Daily Use
@@ -82,14 +81,11 @@ What problems did this feature hit before?
 I changed the source, but the browser still shows old behavior. Check memory and help debug.
 ```
 
-Codex loads the local query flow through `engineering-memory-loader` and reads only what it needs:
+Codex loads the local query flow through `engineering-memory-loader` and reads only the Daily pages or reviewed Concepts it needs:
 
 ```text
-wiki/hot.md
-wiki/index.md
 wiki/sources/ai-chats/
 wiki/concepts/
-wiki/guardrails/Guardrail Triggers.md
 ```
 
 ### Local and Private
@@ -98,8 +94,7 @@ wiki/guardrails/Guardrail Triggers.md
 - Local config is written to `.vault-meta/`, which is gitignored.
 - `.agent/external/` stores third-party checkouts and is gitignored.
 - Generated Daily Wiki pages may contain private project memory. Do not commit personal generated wiki content to a public starter repo.
-- Raw session logs stay in their original local locations; this repo stores lightweight wiki pages and navigation.
-- Session images first stay under gitignored `.vault-meta/captures/assets/`. Only visuals selected by Daily Wiki are copied into `wiki/assets/`; review them for private data before publishing a vault.
+- Raw session logs stay in their original local locations. Gitignored `.vault-meta/` stores regenerable Evidence Snapshots; the wiki stores lightweight pages and navigation.
 
 ### Configure and Install
 
@@ -116,14 +111,12 @@ After the first `bash scripts/config-ui.sh --open`, you usually do not need to r
 scripts/
   config-ui.sh                  # local config web entry
   setup.sh                      # skill setup entry
-  capture-ai-chats.mjs          # deterministic evidence capture
+  capture-ai-chats.mjs          # deterministic bounded Evidence Snapshot
+  daily-memory-workflow.mjs     # one-shot Snapshot prepare and Daily verify
   wiki-lint.mjs                 # deterministic wiki health report
 
 wiki/
   sources/ai-chats/             # Daily Wiki pages
-  assets/ai-chats/              # selected durable screenshots
-  canvases/ai-chats/            # optional derived visual maps
   concepts/                     # reusable engineering lessons
-  guardrails/                      # guardrail triggers and behavior rules
-  index.md / hot.md / log.md    # navigation and recent context
+  index.md / log.md             # stable routing and operation log
 ```
