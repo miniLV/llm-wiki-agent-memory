@@ -129,8 +129,8 @@ Codex 会通过 `engineering-memory-loader` 读取本地 wiki，优先看 `wiki/
 
 ```text
 .agent/skills/
-  daily-ai-chat-pipeline/       # repo-local daily workflow
-  weekly-ai-memory-review/      # repo-local weekly workflow
+  ai-session-wiki-ingest/       # repo-local daily workflow
+  agent-memory-reconcile/       # repo-local periodic workflow
   engineering-memory-loader/    # exported query skill
 
 scripts/

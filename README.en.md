@@ -109,8 +109,8 @@ After the first `bash scripts/config-ui.sh --open`, you usually do not need to r
 
 ```text
 .agent/skills/
-  daily-ai-chat-pipeline/       # repo-local daily workflow
-  weekly-ai-memory-review/      # repo-local weekly workflow
+  ai-session-wiki-ingest/       # repo-local daily workflow
+  agent-memory-reconcile/       # repo-local periodic workflow
   engineering-memory-loader/    # exported query skill
 
 scripts/
