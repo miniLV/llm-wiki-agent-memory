@@ -8,6 +8,9 @@ templates may mirror page shape only.
 
 Use `.agent/skills/` for repo-local workflows and the single exported query skill:
 
+- `agent-memory-setup`: repo-local end-to-end installer; when the user asks to
+  install, set up, configure, bootstrap, repair, or one-click install this repo,
+  read this skill and complete both local setup and Codex App automations.
 - `ai-session-wiki-ingest`: repo-local Daily workflow; not globally exposed.
 - `agent-memory-reconcile`: repo-local periodic workflow; not globally exposed.
 - `engineering-memory-loader`: thin read-only adapter around

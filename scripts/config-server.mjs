@@ -577,43 +577,10 @@ function copyPromptAndOpenCodex(promptPath, copiedMessage, pasteMessage) {
   };
 }
 
-function codexAutomationInstallPrompt(config) {
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "your local timezone";
-  const weekdayNames = {
-    "0": "Sunday",
-    "1": "Monday",
-    "2": "Tuesday",
-    "3": "Wednesday",
-    "4": "Thursday",
-    "5": "Friday",
-    "6": "Saturday",
-    "7": "Sunday",
-  };
-  const weeklyDay = weekdayNames[String(config.weeklyAutoDay)] || "Friday";
-  return `Create or update these two Codex App Automations for ${repoRoot}.
+function codexAutomationInstallPrompt() {
+  return `Set up Agent Memory for the current repository at ${repoRoot}.
 
-- Use Codex App Automations as the only scheduled runner.
-- Prefer updating existing automations with these names or ids instead of creating duplicates.
-- Both must be cron, ACTIVE, local execution, with cwd ${repoRoot}.
-- Preserve the current model and reasoning effort when updating; apply the listed defaults only when creating.
-
-Daily:
-- id/name: llm-wiki-agent-memory-daily / LLM Wiki Agent Memory - Daily
-- schedule: every day at ${config.dailyAutoTime} (${timezone})
-- creation default model: gpt-5.6-luna
-- creation default reasoning effort: medium
-- prompt:
-Use \`date +%F\`, then read \`.agent/skills/ai-session-wiki-ingest/SKILL.md\` completely and follow it as the sole workflow source of truth. Report the result. Do not git commit memory changes.
-
-Weekly:
-- id/name: llm-wiki-agent-memory-weekly / LLM Wiki Agent Memory - Weekly
-- schedule: every ${weeklyDay} at ${config.weeklyAutoTime} (${timezone})
-- creation default model: gpt-5.6-sol
-- creation default reasoning effort: medium
-- prompt:
-Use \`date +%F\` as the reconcile-window end date, then read \`.agent/skills/agent-memory-reconcile/SKILL.md\` completely and follow it as the sole workflow source of truth. Report the result. Do not git commit memory changes.
-
-After creating/updating both automations, show me their names, schedules, and status.`;
+Read \`.agent/skills/agent-memory-setup/SKILL.md\` completely and follow it as the sole setup workflow source of truth. Complete both the local installation and the Daily / Weekly Codex App automations in this task. Do not stop after copying another prompt or ask me to finish setup manually.`;
 }
 
 function codexRecentWeekPrompt() {
@@ -678,7 +645,7 @@ function runCommand(action, config, options = {}) {
   } else if (action === "prepare-codex-automation") {
     fs.mkdirSync(metaDir, { recursive: true });
     const promptPath = path.join(metaDir, "codex-automation-install-prompt.md");
-    fs.writeFileSync(promptPath, codexAutomationInstallPrompt(config));
+    fs.writeFileSync(promptPath, codexAutomationInstallPrompt());
     const command = copyPromptAndOpenCodex(
       promptPath,
       "Copied Codex automation install prompt to clipboard.",

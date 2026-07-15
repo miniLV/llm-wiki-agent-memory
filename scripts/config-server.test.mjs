@@ -12,6 +12,7 @@ const serverSource = path.join(repoRoot, "scripts", "config-server.mjs");
 const appSource = path.join(repoRoot, "scripts", "config-ui", "app.js");
 const configUiScript = path.join(repoRoot, "scripts", "config-ui.sh");
 const installResourcesScript = path.join(repoRoot, "scripts", "install-resources.sh");
+const setupSkillSource = path.join(repoRoot, ".agent", "skills", "agent-memory-setup", "SKILL.md");
 
 test("open actions use configured paths without the full config workflow", () => {
   const source = fs.readFileSync(serverSource, "utf8");
@@ -302,11 +303,20 @@ test("config server copies UTF-8 prompts when launchd provides no locale", async
   const automationResult = await automationResponse.json();
   assert.equal(automationResult.code, 0);
   const automationPrompt = fs.readFileSync(clipboardOutput, "utf8");
-  assert.match(automationPrompt, /read `\.agent\/skills\/ai-session-wiki-ingest\/SKILL\.md` completely and follow it as the sole workflow source of truth/);
-  assert.match(automationPrompt, /read `\.agent\/skills\/agent-memory-reconcile\/SKILL\.md` completely and follow it as the sole workflow source of truth/);
-  assert.match(automationPrompt, /Preserve the current model and reasoning effort when updating/);
-  assert.match(automationPrompt, /creation default model: gpt-5\.6-luna[\s\S]*?creation default reasoning effort: medium/);
-  assert.match(automationPrompt, /creation default model: gpt-5\.6-sol[\s\S]*?creation default reasoning effort: medium/);
+  assert.match(automationPrompt, /read `\.agent\/skills\/agent-memory-setup\/SKILL\.md` completely and follow it as the sole setup workflow source of truth/i);
+  assert.match(automationPrompt, /Complete both the local installation and the Daily \/ Weekly Codex App automations/);
+  assert.doesNotMatch(automationPrompt, /creation default model|ai-session-wiki-ingest|agent-memory-reconcile/);
+  const setupSkill = fs.readFileSync(setupSkillSource, "utf8");
+  const preflightIndex = setupSkill.indexOf("## 1. Preflight");
+  const installIndex = setupSkill.indexOf("## 2. Install local resources");
+  assert.ok(preflightIndex >= 0 && preflightIndex < installIndex);
+  assert.match(setupSkill, /node --version[\s\S]*?git --version[\s\S]*?bash --version/);
+  assert.match(setupSkill, /Setup prerequisites missing/);
+  assert.match(setupSkill, /If all checks pass, report `Preflight ready` and continue/);
+  assert.match(setupSkill, /ai-session-wiki-ingest\/SKILL\.md/);
+  assert.match(setupSkill, /agent-memory-reconcile\/SKILL\.md/);
+  assert.match(setupSkill, /gpt-5\.6-luna[\s\S]*?gpt-5\.6-sol/);
+  assert.match(setupSkill, /never edit `\$CODEX_HOME\/automations\/\*\/automation\.toml`/i);
   assert.doesNotMatch(automationPrompt, /automation memory files|fresh `gpt-5\.6-.*` subagent|latest seven Daily pages/);
   assert.match(fs.readFileSync(appSource, "utf8"), /entry\.model[\s\S]*?reasoningEffort/);
 
@@ -376,7 +386,7 @@ test("config server copies prompts and opens Codex on Windows", async (t) => {
   const runResult = await runResponse.json();
   assert.equal(runResult.code, 0);
   assert.ok(fs.existsSync(clipboardOutput), runResult.output);
-  assert.match(fs.readFileSync(clipboardOutput, "utf8"), /^Create or update these two Codex App Automations/);
+  assert.match(fs.readFileSync(clipboardOutput, "utf8"), /^Set up Agent Memory for the current repository/);
   assert.match(fs.readFileSync(commandOutput, "utf8"), /codex:\/\/threads\/new/);
 
   const recentWeekResponse = await fetch(`${base}/api/run`, {
