@@ -486,7 +486,10 @@ function openPathCommand(target) {
     '  fallback="$target"',
     '  while [ "$fallback" != "/" ] && [ ! -d "$fallback" ]; do fallback="$(dirname "$fallback")"; done',
     '  echo "Path does not exist: $target" >&2',
-    '  if [ -d "$fallback" ] && command -v open >/dev/null 2>&1; then',
+    '  if [ -d "$fallback" ] && command -v explorer.exe >/dev/null 2>&1; then',
+    '    explorer.exe "$fallback" >/dev/null 2>&1 &',
+    '    echo "Opened nearest existing directory: $fallback"',
+    '  elif [ -d "$fallback" ] && command -v open >/dev/null 2>&1; then',
     '    open -a Finder "$fallback" >/dev/null 2>&1 &',
     '    echo "Opened nearest existing directory: $fallback"',
     '  else',
@@ -494,7 +497,9 @@ function openPathCommand(target) {
     '  fi',
     '  exit 1',
     'fi',
-    'if command -v open >/dev/null 2>&1; then',
+    'if command -v explorer.exe >/dev/null 2>&1; then',
+    '  if [ -d "$target" ]; then explorer.exe "$target" >/dev/null 2>&1 & else explorer.exe /select,"$target" >/dev/null 2>&1 & fi',
+    'elif command -v open >/dev/null 2>&1; then',
     '  if [ -d "$target" ]; then open -a Finder "$target" >/dev/null 2>&1 & else open -R "$target" >/dev/null 2>&1 & fi',
     'else',
     '  echo "$target"',
@@ -671,14 +676,7 @@ function runCommand(action, config, options = {}) {
     commandArgs = openPathCommand(path.join(os.homedir(), ".codex", "skills"));
   } else if (action === "open-local-skills") {
     const target = path.join(os.homedir(), ".codex", "skills", "engineering-memory-loader");
-    commandArgs = ["-lc", [
-      `target=${shellQuote(target)}`,
-      'if [ ! -e "$target" ] && [ ! -L "$target" ]; then',
-      '  echo "Applied Codex skill does not exist: $target" >&2',
-      "  exit 1",
-      "fi",
-      'if command -v open >/dev/null 2>&1; then open -R "$target"; else echo "$target"; fi',
-    ].join("\n")];
+    commandArgs = openPathCommand(target);
   } else if (action === "install-obsidian-skills") {
     commandArgs = ["scripts/install-resources.sh", "install-obsidian-skills"];
   } else if (action === "install-claude-obsidian") {

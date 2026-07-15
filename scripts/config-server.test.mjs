@@ -16,6 +16,7 @@ const installResourcesScript = path.join(repoRoot, "scripts", "install-resources
 test("open actions use configured paths without the full config workflow", () => {
   const source = fs.readFileSync(serverSource, "utf8");
   assert.match(source, /open-detected-obsidian-skills[\s\S]*?openPathCommand\(config\.obsidianSkillsDir/);
+  assert.match(source, /command -v explorer\.exe[\s\S]*?explorer\.exe "\$target"/);
   assert.match(fs.readFileSync(appSource, "utf8"), /runActionOnly\(button\.dataset\.openAction\)/);
 });
 

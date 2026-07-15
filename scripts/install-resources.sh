@@ -54,6 +54,24 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
+detect_obsidian_app() {
+  /usr/bin/env node <<'NODE'
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const under = (root, ...parts) => root ? path.join(root, ...parts) : "";
+const candidates = [
+  under(process.env.LOCALAPPDATA, "Programs", "Obsidian", "Obsidian.exe"),
+  under(process.env.LOCALAPPDATA, "Obsidian", "Obsidian.exe"),
+  under(process.env.ProgramFiles || process.env.PROGRAMFILES, "Obsidian", "Obsidian.exe"),
+  under(process.env["ProgramFiles(x86)"] || process.env["PROGRAMFILES(X86)"], "Obsidian", "Obsidian.exe"),
+  "/Applications/Obsidian.app",
+  path.join(os.homedir(), "Applications", "Obsidian.app"),
+];
+process.stdout.write(candidates.find((candidate) => candidate && fs.existsSync(candidate)) || "");
+NODE
+}
+
 open_obsidian() {
   if command_exists open; then
     open "$obsidian_download_url"
@@ -65,8 +83,10 @@ open_obsidian() {
 }
 
 install_obsidian_app() {
-  if [[ -d "/Applications/Obsidian.app" || -d "${HOME}/Applications/Obsidian.app" ]]; then
-    echo "Obsidian App is already installed."
+  local installed_path
+  installed_path="$(detect_obsidian_app)"
+  if [[ -n "$installed_path" ]]; then
+    echo "Obsidian App is already installed: ${installed_path}"
     return
   fi
 
@@ -167,11 +187,13 @@ install_claude_obsidian() {
 }
 
 status_json() {
-  /usr/bin/env node - "$obsidian_skills_dir" "$claude_obsidian_dir" "$codex_skills_dir" "$obsidian_download_url" <<'NODE'
+  local obsidian_app_path
+  obsidian_app_path="$(detect_obsidian_app)"
+  /usr/bin/env node - "$obsidian_skills_dir" "$claude_obsidian_dir" "$codex_skills_dir" "$obsidian_download_url" "$obsidian_app_path" <<'NODE'
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const [obsidianSkillsDir, claudeObsidianDir, codexSkillsDir, obsidianDownloadUrl] = process.argv.slice(2);
+const [obsidianSkillsDir, claudeObsidianDir, codexSkillsDir, obsidianDownloadUrl, obsidianAppPath] = process.argv.slice(2);
 function exists(p) { return fs.existsSync(p); }
 function linkInfo(root, name) {
   const target = path.join(root, name);
@@ -186,11 +208,6 @@ function linkInfo(root, name) {
   } catch {}
   return { linked: available, target: linkTarget, realTarget };
 }
-const appCandidates = [
-  "/Applications/Obsidian.app",
-  path.join(os.homedir(), "Applications", "Obsidian.app"),
-];
-const obsidianAppPath = appCandidates.find(exists) || "";
 const obsidianSkillNames = ["defuddle", "obsidian-markdown", "obsidian-bases", "obsidian-cli", "json-canvas"];
 const obsidianSkillLinks = Object.fromEntries(obsidianSkillNames.map((name) => [
   name,
