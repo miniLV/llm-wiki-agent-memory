@@ -1,0 +1,4 @@
+interface:
+  display_name: "Uninstall Agent Memory"
+  short_description: "Safely remove Agent Memory links and automations"
+  default_prompt: "Use $agent-memory-uninstall to safely uninstall this repository while preserving memory by default."

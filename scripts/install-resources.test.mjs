@@ -69,3 +69,28 @@ test("resource installer preserves a non-empty non-git target", () => {
   assert.match(result.stderr, /Refusing to replace non-empty non-git path/);
   assert.equal(fs.readFileSync(sentinel, "utf8"), "keep\n");
 });
+
+test("non-interactive Obsidian install never opens a download page", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "install-resources-non-interactive-"));
+  const bin = path.join(root, "bin");
+  const opened = path.join(root, "opened.txt");
+  fs.mkdirSync(bin, { recursive: true });
+  fs.writeFileSync(path.join(bin, "node"), "#!/bin/sh\nexit 0\n");
+  fs.writeFileSync(path.join(bin, "open"), `#!/bin/sh\nprintf '%s' \"$*\" > ${JSON.stringify(opened)}\n`);
+  fs.chmodSync(path.join(bin, "node"), 0o755);
+  fs.chmodSync(path.join(bin, "open"), 0o755);
+
+  const result = spawnSync("bash", [script, "install-obsidian-app", "--non-interactive"], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      HOME: path.join(root, "home"),
+      PATH: `${bin}:/usr/bin:/bin`,
+    },
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stderr, /Optional Obsidian App was skipped/);
+  assert.equal(fs.existsSync(opened), false);
+});

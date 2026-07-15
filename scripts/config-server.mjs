@@ -48,6 +48,10 @@ function defaultConfig() {
     dailyAutoTime: defaultDailyAutoTime,
     weeklyAutoDay: "5",
     weeklyAutoTime: defaultWeeklyAutoTime,
+    dailyModel: "",
+    weeklyModel: "",
+    dailyReasoningEffort: "medium",
+    weeklyReasoningEffort: "medium",
   };
 }
 
@@ -104,6 +108,10 @@ function normalizeConfig(input) {
     dailyAutoTime: validTime(base.dailyAutoTime, defaultDailyAutoTime),
     weeklyAutoDay: /^[0-7]$/.test(weeklyAutoDay) ? weeklyAutoDay : "5",
     weeklyAutoTime: validTime(base.weeklyAutoTime, defaultWeeklyAutoTime),
+    dailyModel: String(base.dailyModel || "").trim(),
+    weeklyModel: String(base.weeklyModel || "").trim(),
+    dailyReasoningEffort: String(base.dailyReasoningEffort || "medium").trim() || "medium",
+    weeklyReasoningEffort: String(base.weeklyReasoningEffort || "medium").trim() || "medium",
   };
 }
 
@@ -301,10 +309,10 @@ function codexAppAutomationStatus() {
     ].join("\n");
     const skill = kind === "daily" ? "ai-session-wiki-ingest" : "agent-memory-reconcile";
     const expectedName = kind === "daily" ? "LLM Wiki Agent Memory - Daily" : "LLM Wiki Agent Memory - Weekly";
-    const expectedId = kind === "daily" ? "llm-wiki-agent-memory-daily" : "llm-wiki-agent-memory-weekly";
+    const legacyId = kind === "daily" ? "llm-wiki-agent-memory-daily" : "llm-wiki-agent-memory-weekly";
     return (
       haystack.includes(repoRoot) &&
-      (haystack.includes(expectedId) || haystack.includes(expectedName) || haystack.includes(`.agent/skills/${skill}/SKILL.md`))
+      (haystack.includes(legacyId) || haystack.includes(expectedName) || haystack.includes(`.agent/skills/${skill}/SKILL.md`))
     );
   }
 
@@ -578,9 +586,9 @@ function copyPromptAndOpenCodex(promptPath, copiedMessage, pasteMessage) {
 }
 
 function codexAutomationInstallPrompt() {
-  return `Set up Agent Memory for the current repository at ${repoRoot}.
+  return `Perform the complete Agent Memory installation for the repository at ${repoRoot}. This message explicitly authorizes the full setup.
 
-Read \`.agent/skills/agent-memory-setup/SKILL.md\` completely and follow it as the sole setup workflow source of truth. Complete both the local installation and the Daily / Weekly Codex App automations in this task. Do not stop after copying another prompt or ask me to finish setup manually.`;
+Change to ${repoRoot}, then read \`.agent/skills/agent-memory-setup/SKILL.md\` completely and follow it as the sole setup workflow source of truth. Complete both the local installation and the Daily / Weekly Codex App automations in this task. Do not stop after copying another prompt or ask me to finish setup manually.`;
 }
 
 function codexRecentWeekPrompt() {
@@ -704,7 +712,7 @@ function runCommand(action, config, options = {}) {
   } else if (action === "install-all-resources") {
     commandArgs = ["scripts/install-resources.sh", "install-all"];
   } else if (action === "complete-local-setup") {
-    commandArgs = ["-lc", "bash scripts/install-resources.sh install-all && bash scripts/link-skills.sh --force --prune --agents codex"];
+    commandArgs = ["scripts/setup.sh", "--full", "--non-interactive", "--json"];
   } else if (action === "open-vault") {
     commandArgs = openPathCommand(repoRoot);
   } else if (action === "open-summaries") {
@@ -812,16 +820,6 @@ const server = http.createServer(async (req, res) => {
       const config = writeConfig(body.config || readConfig());
       const action = String(body.action || "");
       const result = await runCommand(action, config, body.options || {});
-      if (action === "complete-local-setup" && result.code === 0) {
-        result.config = writeConfig({
-          ...config,
-          codexSourcesEnabled: true,
-          claudeSourcesEnabled: true,
-          sourcesConfirmed: true,
-          memorySkillCodexEnabled: true,
-          memorySkillClaudeEnabled: false,
-        });
-      }
       sendJson(res, 200, result);
       return;
     }

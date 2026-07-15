@@ -1,4 +1,4 @@
 interface:
   display_name: "Install Agent Memory"
-  short_description: "Install resources, skills, and memory loops"
-  default_prompt: "Use $agent-memory-setup to install this repository and configure its daily and weekly memory automations."
+  short_description: "Install resources, sources, skills, and memory loops"
+  default_prompt: "Use $agent-memory-setup to perform the complete non-interactive installation for this repository."

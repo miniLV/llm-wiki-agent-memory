@@ -26,8 +26,7 @@ test("open actions use configured paths without the full config workflow", () =>
 test("one-click local setup installs local requirements and leaves only the Codex loop", () => {
   const source = fs.readFileSync(serverSource, "utf8");
   const app = fs.readFileSync(appSource, "utf8");
-  assert.match(source, /action === "complete-local-setup"[\s\S]*?install-resources\.sh install-all[\s\S]*?link-skills\.sh --force --prune --agents codex/);
-  assert.match(source, /action === "complete-local-setup" && result\.code === 0[\s\S]*?sourcesConfirmed: true/);
+  assert.match(source, /action === "complete-local-setup"[\s\S]*?scripts\/setup\.sh", "--full", "--non-interactive", "--json"/);
   assert.match(app, /"complete-local-setup"/);
   assert.match(app, /steps\.some\(\(step\) => step\.key !== "runner" && !step\.ok\)/);
 });
@@ -208,6 +207,10 @@ test("config server rejects simple cross-site POSTs and staggers schedule defaul
   assert.equal(config.weeklyAutoDay, "5");
   assert.equal(config.weeklyAutoTime, "17:30");
   assert.equal(config.dailySummaryDetail, "detailed");
+  assert.equal(config.dailyModel, "");
+  assert.equal(config.weeklyModel, "");
+  assert.equal(config.dailyReasoningEffort, "medium");
+  assert.equal(config.weeklyReasoningEffort, "medium");
   const status = await (await fetch(`${base}/api/status`)).json();
   assert.equal(status.automation.codexApp.daily.model, "user-selected-daily");
   assert.equal(status.automation.codexApp.daily.reasoningEffort, "high");
@@ -221,6 +224,13 @@ test("config server rejects simple cross-site POSTs and staggers schedule defaul
   })).json();
   assert.equal((await save("concise")).dailySummaryDetail, "concise");
   assert.equal((await save("verbose")).dailySummaryDetail, "detailed");
+  const modelConfig = await (await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ dailyModel: "supported-daily", weeklyModel: "supported-weekly" }),
+  })).json();
+  assert.equal(modelConfig.dailyModel, "supported-daily");
+  assert.equal(modelConfig.weeklyModel, "supported-weekly");
 });
 
 test("config server copies UTF-8 prompts when launchd provides no locale", async (t) => {
@@ -312,11 +322,14 @@ test("config server copies UTF-8 prompts when launchd provides no locale", async
   assert.ok(preflightIndex >= 0 && preflightIndex < installIndex);
   assert.match(setupSkill, /node --version[\s\S]*?git --version[\s\S]*?bash --version/);
   assert.match(setupSkill, /Setup prerequisites missing/);
-  assert.match(setupSkill, /If all checks pass, report `Preflight ready` and continue/);
+  assert.match(setupSkill, /Ask exactly once whether to perform the full setup/);
+  assert.match(setupSkill, /affirmative replies as authorization only when full installation was offered earlier/);
   assert.match(setupSkill, /ai-session-wiki-ingest\/SKILL\.md/);
   assert.match(setupSkill, /agent-memory-reconcile\/SKILL\.md/);
-  assert.match(setupSkill, /gpt-5\.6-luna[\s\S]*?gpt-5\.6-sol/);
-  assert.match(setupSkill, /never edit `\$CODEX_HOME\/automations\/\*\/automation\.toml`/i);
+  assert.match(setupSkill, /longest ancestor of the repository real path/);
+  assert.match(setupSkill, /do not require the repository itself to appear in the project list/);
+  assert.doesNotMatch(setupSkill, /gpt-5\.6-luna|gpt-5\.6-sol/);
+  assert.match(setupSkill, /never edit Codex automation files directly/i);
   assert.doesNotMatch(automationPrompt, /automation memory files|fresh `gpt-5\.6-.*` subagent|latest seven Daily pages/);
   assert.match(fs.readFileSync(appSource, "utf8"), /entry\.model[\s\S]*?reasoningEffort/);
 
@@ -386,7 +399,7 @@ test("config server copies prompts and opens Codex on Windows", async (t) => {
   const runResult = await runResponse.json();
   assert.equal(runResult.code, 0);
   assert.ok(fs.existsSync(clipboardOutput), runResult.output);
-  assert.match(fs.readFileSync(clipboardOutput, "utf8"), /^Set up Agent Memory for the current repository/);
+  assert.match(fs.readFileSync(clipboardOutput, "utf8"), /^Perform the complete Agent Memory installation/);
   assert.match(fs.readFileSync(commandOutput, "utf8"), /codex:\/\/threads\/new/);
 
   const recentWeekResponse = await fetch(`${base}/api/run`, {

@@ -40,27 +40,87 @@ Flywheel: Daily records, Weekly lints / merges / promotes, and Apply brings less
 
 <sub>Both diagrams above were created with the [miniLV/sketchboard-diagram](https://github.com/miniLV/sketchboard-diagram) agent skill, which generates hand-drawn whiteboard-style HTML diagrams and exports them as PNG.</sub>
 
-### Local Config UI
-
-After you run the local config page, the UI looks like this. Follow the checks and buttons on the page:
-
-![LLM Wiki Agent Memory local config UI](docs/assets/local-config-ui-en.png)
-
 ### Quick Start
+
+Send this directly in an existing Codex project task:
+
+```text
+Help me install [miniLV/llm-wiki-agent-memory](https://github.com/miniLV/llm-wiki-agent-memory)
+```
+
+Codex clones the repository below the current project, reads its setup instructions, and performs a read-only preflight. Then the conversation continues with one confirmation:
+
+```text
+User: Install this project.
+
+Codex: This will install local dependencies, confirm Codex and Claude session
+sources, expose engineering-memory-loader, and create Daily and Weekly
+automations. Perform the complete installation?
+
+User: Yes.
+```
+
+To skip the confirmation, say:
+
+```text
+Perform the complete installation, including the Daily and Weekly automations.
+```
+
+The repository does not need to be registered as a separate Codex project. The installer targets the closest containing Codex project, runs the local setup without opening a browser, and creates or updates both automations with Codex's official automation tool.
+
+Manual clone remains available as a fallback:
 
 ```bash
 git clone https://github.com/miniLV/llm-wiki-agent-memory.git
+```
+
+### Uninstall
+
+Prefer asking Codex to uninstall the project because the Daily and Weekly automations must be deleted with Codex's official automation tool:
+
+```text
+Uninstall this Agent Memory project.
+```
+
+The Agent performs a read-only inspection, explains the two matching automations and repository-owned global skill links, and asks for confirmation once. By default it preserves `.vault-meta`, `.agent/external`, all Daily Wiki pages, and Concepts.
+
+Inspect the manual cleanup plan:
+
+```bash
+bash scripts/uninstall.sh --dry-run --json
+```
+
+After Codex has removed the automations, remove repository-owned global skill links manually:
+
+```bash
+bash scripts/uninstall.sh --yes --json
+```
+
+To also remove regenerable local configuration, Evidence Snapshots, and third-party checkouts:
+
+```bash
+bash scripts/uninstall.sh --yes --purge-local-state --json
+```
+
+`--purge-local-state` still preserves `wiki/`. The script never uninstalls Obsidian, removes the repository, deletes links owned by another installation, or replaces same-name non-link skill directories.
+
+### Local Config UI
+
+The local page is an optional status, diagnostics, and recovery surface:
+
+```bash
 cd llm-wiki-agent-memory
 bash scripts/config-ui.sh --open
 ```
 
-The browser opens a local web page bound to `127.0.0.1`. For the first run, follow the setup flow:
+![LLM Wiki Agent Memory local config UI](docs/assets/local-config-ui-en.png)
 
-1. Check Obsidian, Obsidian Skills, Claude Obsidian, repo skills, and sources.
-2. Install or open missing dependencies from the page.
-3. Confirm sources. Codex session logs and Claude Code session logs are supported by default.
-4. Run setup to link `engineering-memory-loader` into `~/.codex/skills/`.
-5. Once the page is ready, copy the recent-week prompt or install Codex App Automations.
+The page binds only to `127.0.0.1`. Use it to:
+
+1. Inspect Obsidian, Obsidian Skills, Claude Obsidian, repo skills, and sources.
+2. Repair an individual missing dependency.
+3. Adjust source and schedule settings.
+4. Copy the automation recovery prompt only when normal Agent installation is unavailable.
 
 ### Current Support
 
@@ -98,12 +158,14 @@ wiki/concepts/
 
 ### Configure and Install
 
-After the first `bash scripts/config-ui.sh --open`, you usually do not need to run install commands by hand. Obsidian Skills, Claude Obsidian, memory skill exposure, source confirmation, and Codex Automations can all be checked and installed from the local **Setup** page.
+Normal installation is performed by `agent-memory-setup`; the local page is optional. Obsidian Skills, Claude Obsidian, memory skill exposure, source confirmation, and Codex Automations can still be inspected and repaired from the local **Setup** page.
 
 ### Repo Map
 
 ```text
 .agent/skills/
+  agent-memory-setup/           # repo-local complete installer
+  agent-memory-uninstall/       # repo-local safe uninstaller
   ai-session-wiki-ingest/       # repo-local daily workflow
   agent-memory-reconcile/       # repo-local periodic workflow
   engineering-memory-loader/    # exported query skill
@@ -111,6 +173,7 @@ After the first `bash scripts/config-ui.sh --open`, you usually do not need to r
 scripts/
   config-ui.sh                  # local config web entry
   setup.sh                      # skill setup entry
+  uninstall.sh                  # safe local uninstall entry
   capture-ai-chats.mjs          # deterministic bounded Evidence Snapshot
   daily-memory-workflow.mjs     # one-shot Snapshot prepare and Daily verify
   wiki-lint.mjs                 # deterministic wiki health report

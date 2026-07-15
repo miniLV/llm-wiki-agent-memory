@@ -1,63 +1,73 @@
 ---
 name: agent-memory-setup
-description: Install this repository's local Agent Memory stack end to end, including dependencies, the Codex query-skill link, local source configuration, and the Daily and Weekly Codex App automations. Use when the user asks to install, set up, configure, bootstrap, repair, or one-click install this repository without manually copying an automation prompt.
+description: Install and fully configure this repository's local Agent Memory stack, including dependencies, source configuration, the Codex query-skill link, and Daily and Weekly Codex App automations. Use when the user asks to install, deploy, set up, configure, bootstrap, repair, one-click install, or finish the complete setup of this repository, and for short affirmative follow-ups such as "好", "继续", "确认", "yes", or "proceed" after a full installation was offered in the same conversation.
 ---
 
 # Agent Memory Setup
 
-Complete the whole setup in the current task. Do not stop after installing local files or ask the user to copy a prompt into another Codex task.
+Complete setup in the current task. Keep the local configuration UI as a diagnostic and recovery surface; do not route a normal installation through it.
 
-## 1. Preflight
+## 1. Preflight and authorization
 
-Before changing anything, run every check and collect all failures:
+Run a read-only preflight before asking for authorization or changing files:
 
-- Resolve this repository's real path and confirm `scripts/install-resources.sh`, `scripts/link-skills.sh`, `.agent/skills/ai-session-wiki-ingest/SKILL.md`, and `.agent/skills/agent-memory-reconcile/SKILL.md` exist.
-- Record the exit status and version of:
+- Resolve this repository's real path and confirm `scripts/setup.sh`, `scripts/install-resources.sh`, `scripts/link-skills.sh`, `.agent/skills/ai-session-wiki-ingest/SKILL.md`, and `.agent/skills/agent-memory-reconcile/SKILL.md` exist.
+- Record the exit status and version of `node --version`, `git --version`, and `bash --version`.
+- Confirm the repository and Codex home are writable; if Codex home is absent, check the home directory.
+- Discover the Codex automation-management and project-list tools. List projects and select the project whose path is the longest ancestor of the repository real path. The repository may be the project root or a clone anywhere below it; do not require the repository itself to appear in the project list.
 
-```bash
-node --version
-git --version
-bash --version
-```
+On Windows, if Git or Bash is missing from `PATH`, also check `%ProgramFiles%\Git` and `%LOCALAPPDATA%\Programs\Git` before deciding Git for Windows is not installed.
 
-- Confirm the repository and `~/.codex` are writable; if `~/.codex` is absent, check the home directory.
-- Confirm the Codex automation-management tool is available and its project list contains this repository.
+Treat Obsidian, Obsidian Skills, and Claude Obsidian as install targets, not prerequisites. If a required command, path, permission, automation tool, or containing Codex project is unavailable, make no changes. Report one `Setup prerequisites missing` list containing every failure, the detected state, and its exact fix.
 
-On Windows, if `git` or `bash` is missing from `PATH`, also check `%ProgramFiles%\Git` and `%LOCALAPPDATA%\Programs\Git` before deciding Git for Windows is not installed.
+After preflight succeeds, determine authorization:
 
-If anything fails, make no changes. Report one `Setup prerequisites missing` list with every failure, the detected state, and its exact fix:
-
-- Missing Node.js: install the current Node.js LTS from <https://nodejs.org/>, restart Codex, and retry.
-- Windows Git/Bash: add an existing Git for Windows installation to `PATH`, or install it from <https://git-scm.com/download/win>; restart Codex and retry.
-- macOS Git: install the Xcode Command Line Tools, restart Codex, and retry.
-- Repository, permission, automation, or project failure: identify the exact missing path or capability and tell the user how to correct it.
-
-Obsidian, Obsidian Skills, and Claude Obsidian are install targets, not prerequisites. If all checks pass, report `Preflight ready` and continue without asking again.
+- Treat requests that explicitly say complete, full, one-click, direct, or equivalent installation as authorization to proceed.
+- Treat `好`, `可以`, `继续`, `确认`, `yes`, `proceed`, and equivalent affirmative replies as authorization only when full installation was offered earlier in the same conversation.
+- For a generic request such as "安装这个项目", "部署一下", "set up this repo", or "install this", summarize in one sentence that setup installs local dependencies, confirms Codex and Claude session sources, exposes `engineering-memory-loader`, and creates two Codex App automations. Ask exactly once whether to perform the full setup, then stop without making changes.
+- After authorization, continue immediately without asking again. Do not open the configuration UI or ask the user to copy a prompt.
 
 ## 2. Install local resources
 
-From the repository's real path, run:
+From the repository real path, run:
 
 ```bash
-bash scripts/install-resources.sh install-all
-bash scripts/link-skills.sh --force --prune --agents codex
+bash scripts/setup.sh --full --non-interactive --json
 ```
 
-Reuse existing installations and never replace a modified non-link skill directory. In `.vault-meta/config.json`, preserve existing values and set `codexSourcesEnabled`, `claudeSourcesEnabled`, and `sourcesConfirmed` to `true`; create the file if absent and leave it uncommitted.
+Require valid JSON with `ok: true`. Preserve existing configuration and modified non-link skill directories. Treat a missing optional Obsidian desktop app as a warning, not a pipeline failure. Do not commit `.vault-meta`, generated memory, or installation state.
 
-## 3. Create or update the memory loops
+## 3. Create or update memory loops
 
-Use the Codex automation-management tool; never edit `$CODEX_HOME/automations/*/automation.toml`. Target the project resolved during preflight. Read `.vault-meta/config.json`, defaulting to Daily `17:00` and Weekly Friday `17:30` in local time. Inspect existing automations first and update matching ids or names instead of duplicating them. Keep both `ACTIVE`, `cron`, and local. Preserve model and reasoning effort when updating.
+Use the Codex automation-management tool; never edit Codex automation files directly and never substitute launchd, cron, UI automation, or copied prompts.
 
-- Daily: id `llm-wiki-agent-memory-daily`, name `LLM Wiki Agent Memory - Daily`, creation model `gpt-5.6-luna`, reasoning `medium`.
-  Prompt: `Use date +%F, then read .agent/skills/ai-session-wiki-ingest/SKILL.md completely and follow it as the sole workflow source of truth. Report the result. Do not git commit memory changes.`
-- Weekly: id `llm-wiki-agent-memory-weekly`, name `LLM Wiki Agent Memory - Weekly`, creation model `gpt-5.6-sol`, reasoning `medium`.
-  Prompt: `Use date +%F as the reconcile-window end date, then read .agent/skills/agent-memory-reconcile/SKILL.md completely and follow it as the sole workflow source of truth. Report the result. Do not git commit memory changes.`
+Target the containing project selected during preflight. Because its root may be an ancestor of this repository, begin each automation prompt by changing to the repository's absolute real path before reading a repo-local skill.
 
-If the automation-management tool becomes unavailable after preflight, report the changed runtime condition and do not substitute direct TOML writes, CLI scheduling, launchd, cron, or UI automation.
+Read `.vault-meta/config.json`. Default to Daily at `17:00` local time and Weekly on Friday at `17:30` local time. Match existing automations by containing project, exact name, and the referenced repo-local skill or repository path. Update matches instead of creating duplicates. Automation IDs are runtime-owned and opaque; do not require or invent a fixed ID.
+
+Preserve an existing automation's model and reasoning effort. For a new automation, use a model configured in `dailyModel` or `weeklyModel` when non-empty; otherwise use a currently supported Codex coding model accepted by the automation tool. Default reasoning effort to `medium`. Do not hard-code preview-only model IDs.
+
+- Daily name: `LLM Wiki Agent Memory - Daily`
+  Prompt: change to the repository real path, use `date +%F`, read `.agent/skills/ai-session-wiki-ingest/SKILL.md` completely, follow it as the sole workflow source of truth, report the result, and do not git commit memory changes.
+- Weekly name: `LLM Wiki Agent Memory - Weekly`
+  Prompt: change to the repository real path, use `date +%F` as the reconcile-window end date, read `.agent/skills/agent-memory-reconcile/SKILL.md` completely, follow it as the sole workflow source of truth, report the result, and do not git commit memory changes.
+
+Keep both automations `ACTIVE`, local, and scheduled. If the automation tool rejects the containing project or selected model after local setup, report the exact changed runtime condition and the completed local state; do not send the user to the configuration page automatically.
 
 ## 4. Verify
 
-Run `bash scripts/install-resources.sh status --json`. Confirm the resources are available, `~/.codex/skills/engineering-memory-loader` resolves to this repository, and both automations exist once, target this repository, and are `ACTIVE` with the requested schedules.
+Run:
 
-Report installed, reused, or skipped resources and both schedules. Do not run the workflows or commit local config, memory, or automation state.
+```bash
+bash scripts/install-resources.sh status --json
+```
+
+Confirm:
+
+- required resources are available;
+- the Codex `engineering-memory-loader` resolves to this repository;
+- `.vault-meta/config.json` confirms at least one source and preserves existing values;
+- exactly one active Daily and one active Weekly automation target the containing project and reference this repository;
+- each automation has the requested local schedule.
+
+Report installed, reused, skipped, and warning states plus both schedules. Do not run Daily or Weekly workflows as part of setup.

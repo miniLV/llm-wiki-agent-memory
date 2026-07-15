@@ -12,7 +12,7 @@ obsidian_download_url="https://obsidian.md/download"
 
 usage() {
   cat <<USAGE
-Usage: bash scripts/install-resources.sh <status|open-obsidian|install-obsidian-app|install-obsidian-skills|install-claude-obsidian|install-all> [--json]
+Usage: bash scripts/install-resources.sh <status|open-obsidian|install-obsidian-app|install-obsidian-skills|install-claude-obsidian|install-all> [--json] [--non-interactive]
 
 Required:
   install-claude-obsidian   Install Claude Obsidian.
@@ -29,6 +29,7 @@ USAGE
 
 json_mode=0
 force=0
+non_interactive=0
 action="${1:-status}"
 shift || true
 
@@ -40,6 +41,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --force)
       force=1
+      shift
+      ;;
+    --non-interactive)
+      non_interactive=1
       shift
       ;;
     *)
@@ -94,8 +99,16 @@ install_obsidian_app() {
     if brew install --cask obsidian; then
       return
     fi
+    if [[ "$non_interactive" -eq 1 ]]; then
+      echo "Optional Obsidian App was not installed: Homebrew installation failed." >&2
+      return 0
+    fi
     echo "Homebrew could not install Obsidian. Opening the official download page instead." >&2
   else
+    if [[ "$non_interactive" -eq 1 ]]; then
+      echo "Optional Obsidian App was skipped: Homebrew is not installed." >&2
+      return 0
+    fi
     echo "Homebrew is not installed. Opening the official Obsidian download page instead."
   fi
   open_obsidian
