@@ -48,8 +48,6 @@ cd llm-wiki-agent-memory
 bash scripts/config-ui.sh --open
 ```
 
-如果这个项目解决了你的 Agent 失忆问题，欢迎点一个 ⭐，也欢迎在 Issues 里告诉我你的工作流。
-
 ## 架构亮点
 
 整体架构：本机会话先生成一份有界 Evidence Snapshot，再编译成 Daily Wiki；Weekly Review 负责晋升稳定经验，最终通过 memory loader 回到下一次任务。
