@@ -165,13 +165,11 @@ function pathMatches(actual, expected) {
 function skillStatusAt(root, name, expectedTarget = "") {
   const target = path.join(root, name);
   const linkTarget = readLinkMaybe(target);
-  let resolvedTarget = resolveLinkTarget(target, linkTarget);
-  if (!resolvedTarget && fs.existsSync(target)) {
-    try {
-      resolvedTarget = fs.realpathSync(target);
-    } catch {
-      resolvedTarget = "";
-    }
+  let resolvedTarget = "";
+  try {
+    resolvedTarget = fs.realpathSync(target);
+  } catch {
+    resolvedTarget = resolveLinkTarget(target, linkTarget);
   }
   return {
     exists: fs.existsSync(target),

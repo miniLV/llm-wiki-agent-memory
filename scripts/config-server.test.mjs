@@ -95,6 +95,37 @@ test("config server reuses its Node binary when PATH omits Node", async (t) => {
   assert.equal(typeof status.resources.obsidianApp.installed, "boolean");
 });
 
+test("config server recognizes a Codex skill by its final link target", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "config-server-skill-link-"));
+  const serverFile = path.join(root, "scripts", "config-server.mjs");
+  const resourcesFile = path.join(root, "scripts", "install-resources.sh");
+  const source = path.join(root, ".agent", "skills", "engineering-memory-loader");
+  const alias = path.join(root, "skill-alias");
+  const home = path.join(root, "home");
+  const destination = path.join(home, ".codex", "skills", "engineering-memory-loader");
+  fs.mkdirSync(path.dirname(serverFile), { recursive: true });
+  fs.mkdirSync(source, { recursive: true });
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  fs.copyFileSync(serverSource, serverFile);
+  fs.copyFileSync(installResourcesScript, resourcesFile);
+  fs.writeFileSync(path.join(source, "SKILL.md"), "source skill\n");
+  fs.symlinkSync(source, alias, "dir");
+  fs.symlinkSync(alias, destination, "dir");
+
+  const port = await freePort();
+  const child = spawn(process.execPath, [serverFile, `--port=${port}`], {
+    cwd: root,
+    env: { ...process.env, HOME: home, CODEX_HOME: path.join(root, "codex") },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  t.after(() => child.kill());
+  await waitForStartup(child);
+
+  const status = await (await fetch(`http://127.0.0.1:${port}/api/status`)).json();
+  const codex = status.memorySkillMappings.find((mapping) => mapping.id === "codex");
+  assert.equal(codex.skill.linkedToExpected, true);
+});
+
 function freePort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer();

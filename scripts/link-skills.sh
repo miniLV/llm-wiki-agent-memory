@@ -115,11 +115,18 @@ for agent in "${agent_list[@]}"; do
         continue
       fi
     elif [[ -e "$dest" ]]; then
-      echo "Warning: $dest exists and is not a symlink; skipping." >&2
-      continue
+      if [[ "$force" -eq 1 ]] &&
+        node -e 'const fs = require("node:fs"); process.exit(fs.lstatSync(process.argv[1]).isSymbolicLink() ? 1 : 0);' "$dest" &&
+        diff -qr "$src" "$dest" >/dev/null; then
+        rm -rf "$dest"
+        echo "Replacing unchanged copied skill for ${agent}: $skill"
+      else
+        echo "Warning: $dest exists and is not a symlink; skipping." >&2
+        continue
+      fi
     fi
 
-    ln -s "$src" "$dest"
+    node -e 'const fs = require("node:fs"); const [src, dest] = process.argv.slice(1); fs.symlinkSync(src, dest, process.platform === "win32" ? "junction" : "dir");' "$src" "$dest"
     echo "Linked for ${agent}: $skill -> $dest"
   done
 done
