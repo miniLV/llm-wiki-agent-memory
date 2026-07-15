@@ -40,6 +40,16 @@ Flywheel: Daily records, Weekly lints / merges / promotes, and Apply brings less
 
 <sub>Both diagrams above were created with the [miniLV/sketchboard-diagram](https://github.com/miniLV/sketchboard-diagram) agent skill, which generates hand-drawn whiteboard-style HTML diagrams and exports them as PNG.</sub>
 
+### Reproducible Verification
+
+The repository's synthetic fixtures do not read personal sessions. This command verifies setup and uninstall boundaries, the Evidence Snapshot, the Daily workflow, and strict Wiki lint:
+
+```bash
+node --test scripts/*.test.mjs && node scripts/wiki-lint.mjs --strict
+```
+
+These checks reproduce the deterministic local pipeline and provenance constraints. They are not presented as a real-user benchmark and do not measure how well an Agent answers future engineering questions. That evaluation is being designed in [#4](https://github.com/miniLV/llm-wiki-agent-memory/issues/4); [SCHEMA.md](SCHEMA.md) remains the sole definition of the memory model.
+
 ### Quick Start
 
 Send this directly in an existing Codex project task:

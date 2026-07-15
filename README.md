@@ -75,6 +75,16 @@ git clone https://github.com/miniLV/llm-wiki-agent-memory.git
 - 防膨胀：普通 ticket / project key 不默认晋升成长期记忆；只有稳定父级主题或长期 workstream 才沉淀成 Concept。
 - 可审计：每个 Daily 「关键会话」展示 1-3 张代表性 Snapshot Evidence Card；Card 保留原始 session 路径，需要审计时可沿链接反查 raw session。
 
+## 可复现验证
+
+仓库内置的合成 fixture 不读取个人 session。下面这条命令会验证安装与卸载边界、Evidence Snapshot、Daily 工作流和严格 Wiki lint：
+
+```bash
+node --test scripts/*.test.mjs && node scripts/wiki-lint.mjs --strict
+```
+
+这些测试证明确定性的本地流程与来源约束可以复现；它们不把合成案例冒充真实用户 benchmark，也不评估 Agent 对未来工程问题的回答质量。后者正在 [#4](https://github.com/miniLV/llm-wiki-agent-memory/issues/4) 中设计，记忆模型仍以 [SCHEMA.md](SCHEMA.md) 为唯一规范。
+
 ## 安装
 
 直接向 Codex 发送上面的 GitHub 安装请求，或把仓库手动 clone 到当前 Codex 项目目录内后让 Agent 执行安装。仓库不需要单独注册成 Codex 项目；安装器会把 Daily / Weekly automations 绑定到包含该仓库的当前项目，并在运行时切换到仓库目录。
