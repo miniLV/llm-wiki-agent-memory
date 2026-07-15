@@ -33,6 +33,28 @@ function parsePrepare(stdout) {
   };
 }
 
+function readAllChunks(helper, root, date) {
+  const chunks = [];
+  for (let expected = 1; expected <= 1000; expected++) {
+    const run = spawnSync(process.execPath, [helper, "read", date], { cwd: root, encoding: "utf8" });
+    assert.equal(run.status, 0, run.stderr);
+    if (run.stdout.startsWith("{")) {
+      const done = JSON.parse(run.stdout);
+      assert.equal(done.done, true);
+      assert.equal(chunks.length, done.totalChunks);
+      return chunks;
+    }
+    const header = run.stdout.match(/^CHUNK (\d+)\/(\d+)\n/);
+    assert.ok(header);
+    assert.equal(Number(header[1]), expected);
+    const label = `${header[1]}/${header[2]}`;
+    const endMarker = `\nEND CHUNK ${label}\n`;
+    assert.equal(run.stdout.endsWith(endMarker), true);
+    chunks.push(run.stdout.slice(header[0].length, run.stdout.length - endMarker.length));
+  }
+  assert.fail("chunk reader did not finish");
+}
+
 test("prepare reports the persisted Evidence Snapshot path and verify checks the Daily locally", () => {
   const { root, helper } = setupRoot("daily-memory-workflow-");
   const date = "2099-01-02";
@@ -128,6 +150,12 @@ test("prepare reports the persisted Evidence Snapshot path and verify checks the
   assert.equal(obsoleteEmit.status, 1);
   assert.match(obsoleteEmit.stderr, /Usage:/);
 
+  const unread = spawnSync(process.execPath, [helper, "verify", date], { cwd: root, encoding: "utf8" });
+  assert.equal(unread.status, 1);
+  assert.match(JSON.parse(unread.stdout).failure, /read ledger incomplete/);
+
+  assert.equal(readAllChunks(helper, root, date).join(""), persistedSnapshot);
+
   execFileSync("git", ["init", "--quiet"], { cwd: root });
   const missing = spawnSync(process.execPath, [helper, "verify", date], { cwd: root, encoding: "utf8" });
   assert.equal(missing.status, 1);
@@ -192,4 +220,66 @@ test("prepare reports skipped when a date has no source sessions", () => {
   const { result } = parsePrepare(prepared.stdout);
   assert.equal(result.status, "skipped_no_sources");
   assert.doesNotMatch(prepared.stdout, /EVIDENCE SNAPSHOT/);
+});
+
+test("read serves helper-managed chunks with a completeness ledger", () => {
+  const { root, helper } = setupRoot("daily-memory-workflow-read-");
+  const date = "2099-01-06";
+  write(path.join(root, "scripts", "capture-ai-chats.mjs"), `
+    import fs from "node:fs";
+    import path from "node:path";
+    const date = process.argv[2];
+    const dir = path.join(process.cwd(), ".vault-meta", "captures", "ai-chats");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, \`${date}.capture.json\`), JSON.stringify({
+      snapshot_kind: "bounded_daily_evidence",
+      included_turns: 1,
+      omitted_turns: 0,
+      snapshot_mode: "all-turns",
+      date,
+      generated_at: new Date().toISOString(),
+      evidence_card_count: 1,
+      contains_vault_answer: false,
+      warnings: [],
+      cards: [{
+        evidence_id: "codex-big-1",
+        turns: [{ turn_number: 1, goal: "\\u{1F4A1}".repeat(9000), outcomes: [{ text: "done" }] }],
+      }],
+    }));
+  `);
+  write(path.join(root, "scripts", "wiki-lint.mjs"), `
+    import fs from "node:fs";
+    import path from "node:path";
+    const file = path.join(process.cwd(), ".vault-meta", "reviews", "wiki-lint-latest.json");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ issues: [] }));
+  `);
+
+  const prepared = spawnSync(process.execPath, [helper, "prepare", date], { cwd: root, encoding: "utf8" });
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const { result } = parsePrepare(prepared.stdout);
+  assert.equal(result.status, "ready");
+
+  const snapshotPath = path.join(root, ".vault-meta", "captures", "ai-chats", `${date}.capture.json`);
+  const snapshot = fs.readFileSync(snapshotPath, "utf8");
+  const chunks = readAllChunks(helper, root, date);
+  assert.equal(chunks.length >= 3, true);
+  for (const [index, payload] of chunks.entries()) {
+    const first = payload.charCodeAt(0);
+    const last = payload.charCodeAt(payload.length - 1);
+    assert.equal(first >= 0xdc00 && first <= 0xdfff, false, `chunk ${index + 1} starts on a lone low surrogate`);
+    assert.equal(last >= 0xd800 && last <= 0xdbff, false, `chunk ${index + 1} ends on a lone high surrogate`);
+  }
+  assert.equal(chunks.join(""), snapshot);
+  // a 7999-char chunk proves the boundary was shifted off a surrogate pair
+  assert.equal(chunks.some((chunk) => chunk.length === 7999), true);
+
+  const tampered = { ...JSON.parse(snapshot), generated_at: "2099-01-06T23:59:59.000Z" };
+  fs.writeFileSync(snapshotPath, JSON.stringify(tampered), "utf8");
+  const changed = spawnSync(process.execPath, [helper, "verify", date], { cwd: root, encoding: "utf8" });
+  assert.equal(changed.status, 1);
+  assert.match(JSON.parse(changed.stdout).failure, /read ledger incomplete|Snapshot changed after chunk reads/);
+  const changedRead = spawnSync(process.execPath, [helper, "read", date], { cwd: root, encoding: "utf8" });
+  assert.equal(changedRead.status, 1);
+  assert.match(changedRead.stderr, /Evidence Snapshot changed after chunk reads began/);
 });

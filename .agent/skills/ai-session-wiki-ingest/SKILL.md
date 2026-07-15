@@ -39,17 +39,19 @@ returns one metadata JSON line containing its path; it never emits Snapshot byte
 
 2. Handle the one-line status:
 
-   - `ready`: read the persisted Evidence Snapshot at the reported `evidenceSnapshot`
-     path in non-overlapping chunks of at most 12,000 JavaScript string characters.
-     First read only the string length, then read offsets `0`, `12000`, `24000`, and so
-     on until the full file has been consumed. Give every chunk-read command enough
-     output allowance for one chunk. Never reread a chunk, summarize per chunk, or
-     split the work across agents.
+   - `ready`: read the persisted Evidence Snapshot through the helper's chunk reader:
 
      ```bash
-     node -e 'const fs=require("fs"); const s=fs.readFileSync(process.argv[1],"utf8"); console.log(s.length)' SNAPSHOT_PATH
-     node -e 'const fs=require("fs"); const s=fs.readFileSync(process.argv[1],"utf8"); const start=Number(process.argv[2]); process.stdout.write(s.slice(start,start+12000))' SNAPSHOT_PATH OFFSET
+     node scripts/daily-memory-workflow.mjs read YYYY-MM-DD
      ```
+
+     Run it repeatedly. Each run prints one chunk — a `CHUNK i/N ...` header line, the
+     chunk payload, then a trailing `END CHUNK i/N` line — and records that chunk in
+     the read ledger; `verify` later refuses a Daily whose ledger is incomplete. The
+     helper owns chunk sizing and offsets; never compute offsets or read the Snapshot
+     file any other way. Stop when the command prints `{"done":true,...}`. If a chunk
+     is missing its `END CHUNK i/N` line or the tool reports output truncation, report
+     `snapshot_read_truncated`; never reread a chunk or continue synthesis.
    - `skipped_no_sources`: leave the Daily unchanged and report skipped.
    - `skipped_with_reason`: leave the Daily unchanged and report its reason.
 
@@ -62,7 +64,8 @@ returns one metadata JSON line containing its path; it never emits Snapshot byte
    - `snapshot_missing: ...` when `evidenceSnapshot` does not exist;
    - `snapshot_unreadable: ...` when the path exists but cannot be read;
    - `snapshot_invalid_json: ...` when the persisted file is not valid JSON;
-   - `snapshot_chunk_missing: ...` when a required offset was not read;
+   - `snapshot_chunk_missing: ...` when `verify` reports the Snapshot read ledger
+     incomplete;
    - `snapshot_read_truncated: ...` only when a chunk-read tool explicitly reports
      output truncation.
 

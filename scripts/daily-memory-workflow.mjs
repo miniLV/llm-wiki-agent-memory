@@ -9,13 +9,10 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const [mode, date, ...options] = process.argv.slice(2);
 const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date || "");
-const validInvocation = validDate && (
-  (mode === "prepare" && options.length === 0)
-  || (mode === "verify" && options.length === 0)
-);
+const validInvocation = validDate && options.length === 0 && ["prepare", "read", "verify"].includes(mode);
 
 if (!validInvocation) {
-  console.error("Usage: node scripts/daily-memory-workflow.mjs prepare YYYY-MM-DD | verify YYYY-MM-DD");
+  console.error("Usage: node scripts/daily-memory-workflow.mjs prepare YYYY-MM-DD | read YYYY-MM-DD | verify YYYY-MM-DD");
   process.exit(1);
 }
 
@@ -23,6 +20,9 @@ const captureDir = path.join(repoRoot, ".vault-meta", "captures", "ai-chats");
 const capturePath = path.join(captureDir, `${date}.capture.json`);
 const dailyPath = path.join(repoRoot, "wiki", "sources", "ai-chats", `${date}.md`);
 const logPath = path.join(repoRoot, "wiki", "log.md");
+const ledgerPath = path.join(captureDir, `${date}.read-ledger.json`);
+// Sized so a worst-case CJK-dense chunk stays under the agent harness's ~10k-token tool output budget.
+const CHUNK_CHARS = 8000;
 
 function read(file) {
   return fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
@@ -98,6 +98,46 @@ function appendSuccessLog(capture, warnings) {
   return { entry, appended: true };
 }
 
+function sha256(text) {
+  return crypto.createHash("sha256").update(text).digest("hex");
+}
+
+function chunkBoundaries(text) {
+  const boundaries = [0];
+  while (boundaries[boundaries.length - 1] < text.length) {
+    const start = boundaries[boundaries.length - 1];
+    let end = Math.min(start + CHUNK_CHARS, text.length);
+    const lead = text.charCodeAt(end - 1);
+    if (end < text.length && lead >= 0xd800 && lead <= 0xdbff) end -= 1;
+    boundaries.push(end);
+  }
+  return boundaries;
+}
+
+function freshLedger(snapshotText) {
+  return {
+    snapshotSha256: sha256(snapshotText),
+    nextChunk: 0,
+  };
+}
+
+function writeLedger(ledger) {
+  fs.writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`, "utf8");
+}
+
+function snapshotReadFailure(snapshotText) {
+  const ledger = readJson(ledgerPath);
+  if (!ledger) return `Snapshot read ledger missing: ${relative(ledgerPath)}`;
+  if (ledger.snapshotSha256 !== sha256(snapshotText)) {
+    return `Evidence Snapshot changed after chunk reads began: ${relative(capturePath)}`;
+  }
+  const totalChunks = chunkBoundaries(snapshotText).length - 1;
+  if (ledger.nextChunk !== totalChunks) {
+    return `Snapshot read ledger incomplete: read ${Number.isInteger(ledger.nextChunk) ? ledger.nextChunk : 0}/${totalChunks} chunks`;
+  }
+  return "";
+}
+
 if (mode === "prepare") {
   const captureRun = run(process.execPath, [path.join(repoRoot, "scripts", "capture-ai-chats.mjs"), date]);
   if (captureRun.status !== 0) fail("capture", captureRun);
@@ -108,6 +148,8 @@ if (mode === "prepare") {
     process.exit(1);
   }
   const snapshotBytes = Buffer.byteLength(snapshotText);
+  const ledger = freshLedger(snapshotText);
+  writeLedger(ledger);
   const noSources = capture.cards.length === 0;
   const status = noSources ? "skipped_no_sources" : "ready";
   const result = {
@@ -130,43 +172,86 @@ if (mode === "prepare") {
   process.exit(0);
 }
 
-const capture = readJson(capturePath);
-const captureFailure = isEvidenceSnapshot(capture)
-  ? ""
-  : `Invalid Evidence Snapshot: ${relative(capturePath)}`;
-const preconditionFailure = captureFailure || dailyTargetFailure(capture);
-const lint = run(process.execPath, [path.join(repoRoot, "scripts", "wiki-lint.mjs"), "--strict"]);
-const report = readJson(path.join(repoRoot, ".vault-meta", "reviews", "wiki-lint-latest.json"));
-const issues = Array.isArray(report?.issues) ? report.issues : [];
-const warningCount = issues.filter((issue) => issue.severity === "warning").length;
-const beforeLog = read(logPath);
-const preDiffCheck = run("git", ["diff", "--check", "--", relative(dailyPath), relative(logPath)]);
-let logResult = { entry: "", appended: false };
-if (!preconditionFailure && lint.status === 0 && preDiffCheck.status === 0) {
-  logResult = appendSuccessLog(capture, warningCount);
+if (mode === "read") {
+  const snapshotText = read(capturePath);
+  if (!snapshotText) {
+    console.error(`Evidence Snapshot missing: ${relative(capturePath)}`);
+    process.exit(1);
+  }
+  if (!isEvidenceSnapshot(parseJson(snapshotText))) {
+    console.error(`Invalid Evidence Snapshot: ${relative(capturePath)}`);
+    process.exit(1);
+  }
+  const fresh = freshLedger(snapshotText);
+  const boundaries = chunkBoundaries(snapshotText);
+  const totalChunks = boundaries.length - 1;
+  const stored = readJson(ledgerPath);
+  if (stored && stored.snapshotSha256 !== fresh.snapshotSha256) {
+    console.error(`Evidence Snapshot changed after chunk reads began: ${relative(capturePath)}`);
+    process.exit(1);
+  }
+  const index = Number.isInteger(stored?.nextChunk)
+    && stored.nextChunk >= 0
+    && stored.nextChunk <= totalChunks
+    ? stored.nextChunk
+    : 0;
+  if (index === totalChunks) {
+    console.log(JSON.stringify({
+      mode,
+      date,
+      done: true,
+      totalChunks,
+      evidenceSnapshot: relative(capturePath),
+    }));
+  } else {
+    writeLedger({ ...fresh, nextChunk: index + 1 });
+    const label = `${index + 1}/${totalChunks}`;
+    process.stdout.write(`CHUNK ${label}\n`);
+    process.stdout.write(snapshotText.slice(boundaries[index], boundaries[index + 1]));
+    process.stdout.write(`\nEND CHUNK ${label}\n`);
+  }
 }
-const diffCheck = run("git", ["diff", "--check", "--", relative(dailyPath), relative(logPath)]);
-if (logResult.appended && diffCheck.status !== 0) {
-  fs.writeFileSync(logPath, beforeLog, "utf8");
-  logResult = { entry: "", appended: false };
+
+if (mode === "verify") {
+  const snapshotText = read(capturePath);
+  const capture = parseJson(snapshotText);
+  const captureFailure = isEvidenceSnapshot(capture)
+    ? ""
+    : `Invalid Evidence Snapshot: ${relative(capturePath)}`;
+  const preconditionFailure = captureFailure || snapshotReadFailure(snapshotText) || dailyTargetFailure(capture);
+  const lint = run(process.execPath, [path.join(repoRoot, "scripts", "wiki-lint.mjs"), "--strict"]);
+  const report = readJson(path.join(repoRoot, ".vault-meta", "reviews", "wiki-lint-latest.json"));
+  const issues = Array.isArray(report?.issues) ? report.issues : [];
+  const warningCount = issues.filter((issue) => issue.severity === "warning").length;
+  const beforeLog = read(logPath);
+  const preDiffCheck = run("git", ["diff", "--check", "--", relative(dailyPath), relative(logPath)]);
+  let logResult = { entry: "", appended: false };
+  if (!preconditionFailure && lint.status === 0 && preDiffCheck.status === 0) {
+    logResult = appendSuccessLog(capture, warningCount);
+  }
+  const diffCheck = run("git", ["diff", "--check", "--", relative(dailyPath), relative(logPath)]);
+  if (logResult.appended && diffCheck.status !== 0) {
+    fs.writeFileSync(logPath, beforeLog, "utf8");
+    logResult = { entry: "", appended: false };
+  }
+  const status = run("git", ["status", "--short", "--", relative(dailyPath), relative(logPath)]);
+  const result = {
+    mode,
+    date,
+    ok: !preconditionFailure && lint.status === 0 && diffCheck.status === 0 && status.status === 0,
+    lint: {
+      exitCode: lint.status,
+      errors: issues.filter((issue) => issue.severity === "error").length,
+      warnings: warningCount,
+    },
+    diffCheck: diffCheck.status === 0 ? "clean" : "failed",
+    logEntry: logResult.entry,
+    logAppended: logResult.appended,
+    changedFiles: String(status.stdout || "").trim().split("\n").filter(Boolean),
+  };
+  if (!result.ok) {
+    result.failure = String(preconditionFailure || lint.stderr || lint.stdout || diffCheck.stderr || diffCheck.stdout || status.stderr || "verification failed").trim().slice(-4000);
+  }
+  console.log(JSON.stringify(result));
+  process.exit(result.ok ? 0 : 1);
 }
-const status = run("git", ["status", "--short", "--", relative(dailyPath), relative(logPath)]);
-const result = {
-  mode,
-  date,
-  ok: !preconditionFailure && lint.status === 0 && diffCheck.status === 0 && status.status === 0,
-  lint: {
-    exitCode: lint.status,
-    errors: issues.filter((issue) => issue.severity === "error").length,
-    warnings: warningCount,
-  },
-  diffCheck: diffCheck.status === 0 ? "clean" : "failed",
-  logEntry: logResult.entry,
-  logAppended: logResult.appended,
-  changedFiles: String(status.stdout || "").trim().split("\n").filter(Boolean),
-};
-if (!result.ok) {
-  result.failure = String(preconditionFailure || lint.stderr || lint.stdout || diffCheck.stderr || diffCheck.stdout || status.stderr || "verification failed").trim().slice(-4000);
-}
-console.log(JSON.stringify(result));
-process.exit(result.ok ? 0 : 1);
