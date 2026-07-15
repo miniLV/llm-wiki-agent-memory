@@ -229,11 +229,12 @@ function automationStatus() {
 }
 
 function parseTomlString(value) {
-  return String(value || "")
-    .replace(/^"/, "")
-    .replace(/"$/, "")
-    .replace(/\\"/g, "\"")
-    .replace(/\\n/g, "\n");
+  const text = String(value || "");
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text.replace(/^"/, "").replace(/"$/, "");
+  }
 }
 
 function parseSimpleToml(text) {
@@ -512,7 +513,16 @@ function openUrlCommand(url) {
 }
 
 function openAppCommand(appName, fallbackPath) {
-  return ["-lc", `if command -v open >/dev/null 2>&1; then open -a ${shellQuote(appName)} >/dev/null 2>&1 || open ${shellQuote(fallbackPath)} >/dev/null 2>&1 & else echo ${shellQuote(fallbackPath)}; fi`];
+  return ["-lc", [
+    `target=${shellQuote(fallbackPath)}`,
+    "if command -v cmd.exe >/dev/null 2>&1; then",
+    '  cmd.exe /c start "" "$target" >/dev/null 2>&1',
+    "elif command -v open >/dev/null 2>&1; then",
+    `  open -a ${shellQuote(appName)} >/dev/null 2>&1 || open "$target" >/dev/null 2>&1 &`,
+    "else",
+    '  echo "$target"',
+    "fi",
+  ].join("\n")];
 }
 
 function codexAutomationInstallPrompt(config) {
@@ -622,10 +632,15 @@ function runCommand(action, config, options = {}) {
       "if command -v pbcopy >/dev/null 2>&1; then",
       "  pbcopy < \"$prompt_file\"",
       "  echo \"Copied Codex automation install prompt to clipboard.\"",
+      "elif command -v clip.exe >/dev/null 2>&1; then",
+      "  clip.exe < \"$prompt_file\"",
+      "  echo \"Copied Codex automation install prompt to clipboard.\"",
       "else",
       "  echo \"Clipboard copy is unavailable; prompt saved at: $prompt_file\"",
       "fi",
-      "if command -v open >/dev/null 2>&1; then",
+      "if command -v cmd.exe >/dev/null 2>&1; then",
+      '  cmd.exe /c start "" "codex://threads/new" >/dev/null 2>&1',
+      "elif command -v open >/dev/null 2>&1; then",
       "  open -a Codex >/dev/null 2>&1 || codex app >/dev/null 2>&1 || true",
       "elif command -v codex >/dev/null 2>&1; then",
       "  codex app >/dev/null 2>&1 || true",
@@ -641,10 +656,15 @@ function runCommand(action, config, options = {}) {
       "if command -v pbcopy >/dev/null 2>&1; then",
       "  pbcopy < \"$prompt_file\"",
       "  echo \"Copied recent-week wiki prompt to clipboard.\"",
+      "elif command -v clip.exe >/dev/null 2>&1; then",
+      "  clip.exe < \"$prompt_file\"",
+      "  echo \"Copied recent-week wiki prompt to clipboard.\"",
       "else",
       "  echo \"Clipboard copy is unavailable; prompt saved at: $prompt_file\"",
       "fi",
-      "if command -v open >/dev/null 2>&1; then",
+      "if command -v cmd.exe >/dev/null 2>&1; then",
+      '  cmd.exe /c start "" "codex://threads/new" >/dev/null 2>&1',
+      "elif command -v open >/dev/null 2>&1; then",
       "  open -a Codex >/dev/null 2>&1 || codex app >/dev/null 2>&1 || true",
       "elif command -v codex >/dev/null 2>&1; then",
       "  codex app >/dev/null 2>&1 || true",
@@ -654,7 +674,8 @@ function runCommand(action, config, options = {}) {
   } else if (action === "open-obsidian") {
     commandArgs = ["scripts/install-resources.sh", "open-obsidian"];
   } else if (action === "open-detected-obsidian-app") {
-    commandArgs = openAppCommand("Obsidian", "/Applications/Obsidian.app");
+    const obsidianAppPath = resourceStatus(config).obsidianApp?.path || "/Applications/Obsidian.app";
+    commandArgs = openAppCommand("Obsidian", obsidianAppPath);
   } else if (action === "install-obsidian-app") {
     commandArgs = ["scripts/install-resources.sh", "install-obsidian-app"];
   } else if (action === "open-obsidian-skills-github") {
@@ -683,6 +704,8 @@ function runCommand(action, config, options = {}) {
     commandArgs = ["scripts/install-resources.sh", "install-claude-obsidian"];
   } else if (action === "install-all-resources") {
     commandArgs = ["scripts/install-resources.sh", "install-all"];
+  } else if (action === "complete-local-setup") {
+    commandArgs = ["-lc", "bash scripts/install-resources.sh install-all && bash scripts/link-skills.sh --force --prune --agents codex"];
   } else if (action === "open-vault") {
     commandArgs = openPathCommand(repoRoot);
   } else if (action === "open-summaries") {
@@ -761,11 +784,12 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 400, { error: "No clipboard text provided." });
         return;
       }
-      if (!commandExists("pbcopy")) {
-        sendJson(res, 501, { error: "pbcopy is unavailable." });
+      const clipboardCommand = commandExists("pbcopy") ? "pbcopy" : (commandExists("clip.exe") ? "clip.exe" : "");
+      if (!clipboardCommand) {
+        sendJson(res, 501, { error: "System clipboard command is unavailable." });
         return;
       }
-      const result = spawnSync("pbcopy", {
+      const result = spawnSync(clipboardCommand, {
         input: text,
         encoding: "utf8",
         env: { ...process.env, LC_CTYPE: "en_US.UTF-8" },
@@ -780,7 +804,18 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/run") {
       const body = safeJson(await readBody(req)) || {};
       const config = writeConfig(body.config || readConfig());
-      const result = await runCommand(String(body.action || ""), config, body.options || {});
+      const action = String(body.action || "");
+      const result = await runCommand(action, config, body.options || {});
+      if (action === "complete-local-setup" && result.code === 0) {
+        result.config = writeConfig({
+          ...config,
+          codexSourcesEnabled: true,
+          claudeSourcesEnabled: true,
+          sourcesConfirmed: true,
+          memorySkillCodexEnabled: true,
+          memorySkillClaudeEnabled: false,
+        });
+      }
       sendJson(res, 200, result);
       return;
     }

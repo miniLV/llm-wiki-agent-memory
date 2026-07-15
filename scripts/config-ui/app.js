@@ -21,6 +21,7 @@ let currentLang = localStorage.getItem("configUiLang") === "en" ? "en" : "zh";
 const progressActions = new Set([
   "setup",
   "install-all-resources",
+  "complete-local-setup",
   "install-obsidian-app",
   "install-obsidian-skills",
   "install-claude-obsidian",
@@ -129,6 +130,9 @@ const i18n = {
     "setup.obsidianSkillsBody": "需要 Obsidian CLI、Canvas、Bases 等增强能力时再安装；核心 memory pipeline 不依赖这些 skills。",
     "setup.installObsidianSkills": "安装 Obsidian Skills",
     "setup.installAllRecommended": "一键安装推荐环境",
+    "setup.completeLocalTitle": "完成本机配置",
+    "setup.completeLocalBody": "自动安装本机依赖、应用 Wiki Skill，并启用默认会话数据源；Memory Loop 仍需你复制提示词到 Codex。",
+    "setup.completeLocalAction": "一键完成本机配置",
     "setup.claudeObsidianTitle": "安装 Claude Obsidian",
     "setup.claudeObsidianBody": "安装 Claude Obsidian，让 memory loader 可以查询本地知识库。",
     "setup.installClaudeObsidian": "安装 Claude Obsidian",
@@ -306,6 +310,9 @@ const i18n = {
     "setup.obsidianSkillsBody": "Install these only for extras such as Obsidian CLI, Canvas, or Bases. The core memory pipeline does not depend on them.",
     "setup.installObsidianSkills": "Install Obsidian Skills",
     "setup.installAllRecommended": "Install recommended setup",
+    "setup.completeLocalTitle": "Complete local setup",
+    "setup.completeLocalBody": "Install local dependencies, apply the Wiki Skill, and enable the default session sources. Memory Loop still needs you to paste its prompt into Codex.",
+    "setup.completeLocalAction": "Complete local setup",
     "setup.claudeObsidianTitle": "Install Claude Obsidian",
     "setup.claudeObsidianBody": "Install Claude Obsidian so the memory loader can query the local vault.",
     "setup.installClaudeObsidian": "Install Claude Obsidian",
@@ -777,38 +784,18 @@ function renderOnboarding(status, steps, options = {}) {
   let label = t("setup.enterConfig");
 
   if (!ready) {
-    const firstBlockedStep = steps.find((step) => !step.ok);
-    activeSetupKey = firstBlockedStep?.key || "";
-    if (activeSetupKey === "obsidianApp") {
-      title = t("setup.obsidianAppTitle");
-      body = t("setup.obsidianAppBody");
-      action = "install-all-resources";
-      label = t("setup.installAllRecommended");
-    } else if (activeSetupKey === "obsidianSkills") {
-      title = t("setup.obsidianSkillsTitle");
-      body = t("setup.obsidianSkillsBody");
-      action = "install-all-resources";
-      label = t("setup.installAllRecommended");
-    } else if (activeSetupKey === "claudeObsidian") {
-      title = t("setup.claudeObsidianTitle");
-      body = t("setup.claudeObsidianBody");
-      action = "install-all-resources";
-      label = t("setup.installAllRecommended");
-    } else if (activeSetupKey === "localSkills") {
-      title = t("setup.applySkillTitle");
-      body = t("setup.applySkillBody");
-      action = "";
-      label = t("setup.applySkillAction");
+    const needsLocalSetup = steps.some((step) => step.key !== "runner" && !step.ok);
+    activeSetupKey = needsLocalSetup ? "" : "runner";
+    if (needsLocalSetup) {
+      title = t("setup.completeLocalTitle");
+      body = t("setup.completeLocalBody");
+      action = "complete-local-setup";
+      label = t("setup.completeLocalAction");
     } else if (activeSetupKey === "runner") {
       title = t("setup.memoryLoopTitle");
       body = t("setup.memoryLoopBody");
       action = "";
       label = t("setup.copyOpenCodex");
-    } else if (activeSetupKey === "sources") {
-      title = t("setup.sourcesTitle");
-      body = t("setup.sourcesBody");
-      action = "";
-      label = t("setup.configureSources");
     }
   } else {
     activeSetupKey = "";

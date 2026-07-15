@@ -15,9 +15,20 @@ const installResourcesScript = path.join(repoRoot, "scripts", "install-resources
 
 test("open actions use configured paths without the full config workflow", () => {
   const source = fs.readFileSync(serverSource, "utf8");
+  assert.match(source, /open-detected-obsidian-app[\s\S]*?resourceStatus\(config\)\.obsidianApp\?\.path/);
+  assert.match(source, /command -v cmd\.exe[\s\S]*?cmd\.exe \/c start/);
   assert.match(source, /open-detected-obsidian-skills[\s\S]*?openPathCommand\(config\.obsidianSkillsDir/);
   assert.match(source, /command -v explorer\.exe[\s\S]*?explorer\.exe "\$target"/);
   assert.match(fs.readFileSync(appSource, "utf8"), /runActionOnly\(button\.dataset\.openAction\)/);
+});
+
+test("one-click local setup installs local requirements and leaves only the Codex loop", () => {
+  const source = fs.readFileSync(serverSource, "utf8");
+  const app = fs.readFileSync(appSource, "utf8");
+  assert.match(source, /action === "complete-local-setup"[\s\S]*?install-resources\.sh install-all[\s\S]*?link-skills\.sh --force --prune --agents codex/);
+  assert.match(source, /action === "complete-local-setup" && result\.code === 0[\s\S]*?sourcesConfirmed: true/);
+  assert.match(app, /"complete-local-setup"/);
+  assert.match(app, /steps\.some\(\(step\) => step\.key !== "runner" && !step\.ok\)/);
 });
 
 test("config UI reuses a relative-path server only when its cwd is this repo", () => {
@@ -109,6 +120,9 @@ function waitForStartup(child) {
 
 test("config server rejects simple cross-site POSTs and staggers schedule defaults", async (t) => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "agent memory path with spaces ")));
+  const tomlRoot = process.platform === "win32"
+    ? root.replaceAll("\\", "\\\\")
+    : root.replaceAll("/", "\\u002f");
   const serverFile = path.join(root, "scripts", "config-server.mjs");
   const codexHome = path.join(root, "codex");
   fs.mkdirSync(path.dirname(serverFile), { recursive: true });
@@ -125,7 +139,7 @@ test("config server rejects simple cross-site POSTs and staggers schedule defaul
       'status = "ACTIVE"',
       `model = "${model}"`,
       `reasoning_effort = "${reasoningEffort}"`,
-      `cwds = ["${root}"]`,
+      `cwds = ["${tomlRoot}"]`,
       "",
     ].join("\n"));
   }
@@ -275,4 +289,58 @@ test("config server copies UTF-8 prompts when launchd provides no locale", async
   assert.equal(openResult.code, 0);
   assert.equal(Object.hasOwn(openResult, "status"), false);
   assert.ok(Date.now() - openStartedAt < 750, "open action waited for Finder");
+});
+
+test("config server copies prompts and opens Codex on Windows", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-memory-windows-codex-"));
+  const serverFile = path.join(root, "scripts", "config-server.mjs");
+  const binDir = path.join(root, "bin");
+  const clipboardOutput = path.join(root, "clipboard.txt");
+  const commandOutput = path.join(root, "command.txt");
+  fs.mkdirSync(path.dirname(serverFile), { recursive: true });
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.copyFileSync(serverSource, serverFile);
+
+  fs.writeFileSync(path.join(binDir, "clip.exe"), "#!/bin/sh\ncat > \"$CLIPBOARD_OUTPUT\"\n");
+  fs.writeFileSync(path.join(binDir, "cmd.exe"), "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$COMMAND_OUTPUT\"\n");
+  fs.chmodSync(path.join(binDir, "clip.exe"), 0o755);
+  fs.chmodSync(path.join(binDir, "cmd.exe"), 0o755);
+  const bashEnv = path.join(root, "bash-env.sh");
+  fs.writeFileSync(bashEnv, `export PATH="${binDir}:/bin"\n`);
+
+  const port = await freePort();
+  const child = spawn(process.execPath, [serverFile, `--port=${port}`], {
+    cwd: root,
+    env: {
+      ...process.env,
+      HOME: path.join(root, "home"),
+      PATH: `${binDir}:/bin`,
+      BASH_ENV: bashEnv,
+      CLIPBOARD_OUTPUT: clipboardOutput,
+      COMMAND_OUTPUT: commandOutput,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  t.after(() => child.kill());
+  await waitForStartup(child);
+
+  const base = `http://127.0.0.1:${port}`;
+  const runResponse = await fetch(`${base}/api/run`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "prepare-codex-automation", config: {} }),
+  });
+  const runResult = await runResponse.json();
+  assert.equal(runResult.code, 0);
+  assert.ok(fs.existsSync(clipboardOutput), runResult.output);
+  assert.match(fs.readFileSync(clipboardOutput, "utf8"), /^Create or update these two Codex App Automations/);
+  assert.match(fs.readFileSync(commandOutput, "utf8"), /codex:\/\/threads\/new/);
+
+  const clipboardResponse = await fetch(`${base}/api/clipboard`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text: "Windows clipboard" }),
+  });
+  assert.equal(clipboardResponse.status, 200);
+  assert.equal(fs.readFileSync(clipboardOutput, "utf8"), "Windows clipboard");
 });
