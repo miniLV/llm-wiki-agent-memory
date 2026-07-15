@@ -326,16 +326,27 @@ test("config server copies prompts and opens Codex on Windows", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-memory-windows-codex-"));
   const serverFile = path.join(root, "scripts", "config-server.mjs");
   const binDir = path.join(root, "bin");
+  const systemDir = path.join(root, "Windows", "System32");
+  const powershellDir = path.join(root, "Windows", "System32", "WindowsPowerShell", "v1.0");
   const clipboardOutput = path.join(root, "clipboard.txt");
   const commandOutput = path.join(root, "command.txt");
   fs.mkdirSync(path.dirname(serverFile), { recursive: true });
   fs.mkdirSync(binDir, { recursive: true });
+  fs.mkdirSync(powershellDir, { recursive: true });
   fs.copyFileSync(serverSource, serverFile);
 
-  fs.writeFileSync(path.join(binDir, "clip.exe"), "#!/bin/sh\ncat > \"$CLIPBOARD_OUTPUT\"\n");
-  fs.writeFileSync(path.join(binDir, "cmd.exe"), "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$COMMAND_OUTPUT\"\n");
-  fs.chmodSync(path.join(binDir, "clip.exe"), 0o755);
-  fs.chmodSync(path.join(binDir, "cmd.exe"), 0o755);
+  fs.writeFileSync(path.join(powershellDir, "powershell.exe"), [
+    "#!/bin/sh",
+    'command="$*"',
+    'prompt_path="${command#*Get-Content -LiteralPath \\\'}"',
+    'prompt_path="${prompt_path%%\\\' -Raw*}"',
+    'cat "$prompt_path" > "$CLIPBOARD_OUTPUT"',
+    'printf "%s\\n" "$command" > "$COMMAND_OUTPUT"',
+    "",
+  ].join("\n"));
+  fs.writeFileSync(path.join(systemDir, "cmd.exe"), "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$COMMAND_OUTPUT\"\n");
+  fs.chmodSync(path.join(powershellDir, "powershell.exe"), 0o755);
+  fs.chmodSync(path.join(systemDir, "cmd.exe"), 0o755);
   const bashEnv = path.join(root, "bash-env.sh");
   fs.writeFileSync(bashEnv, `export PATH="${binDir}:/bin"\n`);
 
@@ -346,6 +357,7 @@ test("config server copies prompts and opens Codex on Windows", async (t) => {
       ...process.env,
       HOME: path.join(root, "home"),
       PATH: `${binDir}:/bin`,
+      SystemRoot: path.join(root, "Windows"),
       BASH_ENV: bashEnv,
       CLIPBOARD_OUTPUT: clipboardOutput,
       COMMAND_OUTPUT: commandOutput,
@@ -367,11 +379,50 @@ test("config server copies prompts and opens Codex on Windows", async (t) => {
   assert.match(fs.readFileSync(clipboardOutput, "utf8"), /^Create or update these two Codex App Automations/);
   assert.match(fs.readFileSync(commandOutput, "utf8"), /codex:\/\/threads\/new/);
 
-  const clipboardResponse = await fetch(`${base}/api/clipboard`, {
+  const recentWeekResponse = await fetch(`${base}/api/run`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text: "Windows clipboard" }),
+    body: JSON.stringify({ action: "prepare-codex-recent-week", config: {} }),
   });
-  assert.equal(clipboardResponse.status, 200);
-  assert.equal(fs.readFileSync(clipboardOutput, "utf8"), "Windows clipboard");
+  const recentWeekResult = await recentWeekResponse.json();
+  assert.equal(recentWeekResult.code, 0, recentWeekResult.output);
+  assert.match(fs.readFileSync(clipboardOutput, "utf8"), /^整理最近一周的 LLM wiki memory。/);
+  assert.match(fs.readFileSync(commandOutput, "utf8"), /Get-Content.*-Encoding UTF8.*Set-Clipboard.*codex:\/\/threads\/new/s);
+
+  const openResponse = await fetch(`${base}/api/run`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "open-detected-obsidian-app", config: {} }),
+  });
+  const openResult = await openResponse.json();
+  assert.equal(openResult.code, 0, openResult.output);
+  assert.match(fs.readFileSync(commandOutput, "utf8"), /^\/c\nstart\n\n.*Obsidian/si);
+});
+
+test("config server reports a missing Git Bash before local setup", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-memory-no-bash-"));
+  const serverFile = path.join(root, "scripts", "config-server.mjs");
+  const emptyPath = path.join(root, "empty-bin");
+  fs.mkdirSync(path.dirname(serverFile), { recursive: true });
+  fs.mkdirSync(emptyPath);
+  fs.copyFileSync(serverSource, serverFile);
+
+  const port = await freePort();
+  const child = spawn(process.execPath, [serverFile, `--port=${port}`], {
+    cwd: root,
+    env: { ...process.env, HOME: path.join(root, "home"), PATH: emptyPath },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  t.after(() => child.kill());
+  await waitForStartup(child);
+
+  const base = `http://127.0.0.1:${port}`;
+  const response = await fetch(`${base}/api/run`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "complete-local-setup", config: {} }),
+  });
+  const result = await response.json();
+  assert.equal(result.code, 1);
+  assert.match(result.output, /Git Bash is required.*https:\/\/git-scm\.com\/download\/win/s);
 });

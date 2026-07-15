@@ -142,6 +142,24 @@ function commandPath(command) {
   return "";
 }
 
+function bashPath() {
+  return commandPath("bash") || commandPath("bash.exe");
+}
+
+function windowsSystemPath(...parts) {
+  const systemRoot = process.env.SystemRoot || process.env.SYSTEMROOT || (process.platform === "win32" ? "C:\\Windows" : "");
+  const candidate = systemRoot ? path.join(systemRoot, ...parts) : "";
+  return candidate && fs.existsSync(candidate) ? candidate : "";
+}
+
+function windowsPowerShellPath() {
+  return windowsSystemPath("System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+}
+
+function windowsCommandPath() {
+  return windowsSystemPath("System32", "cmd.exe");
+}
+
 function readLinkMaybe(file) {
   try {
     return fs.lstatSync(file).isSymbolicLink() ? fs.readlinkSync(file) : "";
@@ -320,7 +338,9 @@ function resourceStatus(config) {
   if (config.obsidianSkillsDir) env.OBSIDIAN_SKILLS_DIR = config.obsidianSkillsDir;
   if (config.claudeObsidianRepo) env.CLAUDE_OBSIDIAN_REPO = config.claudeObsidianRepo;
   if (config.claudeObsidianDir) env.CLAUDE_OBSIDIAN_DIR = config.claudeObsidianDir;
-  const result = spawnSync("bash", ["scripts/install-resources.sh", "status", "--json"], {
+  const shell = bashPath();
+  if (!shell) return { error: "Git Bash is required. Install Git for Windows: https://git-scm.com/download/win" };
+  const result = spawnSync(shell, ["scripts/install-resources.sh", "status", "--json"], {
     cwd: repoRoot,
     env,
     encoding: "utf8",
@@ -523,6 +543,40 @@ function openAppCommand(appName, fallbackPath) {
   ].join("\n")];
 }
 
+function copyPromptAndOpenCodex(promptPath, copiedMessage, pasteMessage) {
+  const powershell = windowsPowerShellPath();
+  if (powershell) {
+    const quotedPromptPath = promptPath.replaceAll("'", "''");
+    return {
+      cmd: powershell,
+      args: ["-NoProfile", "-NonInteractive", "-Command", [
+        "$ErrorActionPreference = 'Stop'",
+        `Get-Content -LiteralPath '${quotedPromptPath}' -Raw -Encoding UTF8 | Set-Clipboard -ErrorAction Stop`,
+        "Start-Process 'codex://threads/new'",
+        `Write-Output '${copiedMessage}'`,
+      ].join("; ")],
+    };
+  }
+  return {
+    cmd: bashPath(),
+    args: ["-lc", [
+      `prompt_file=${shellQuote(promptPath)}`,
+      "if command -v pbcopy >/dev/null 2>&1; then",
+      "  pbcopy < \"$prompt_file\"",
+      `  echo ${shellQuote(copiedMessage)}`,
+      "else",
+      "  echo \"Clipboard copy is unavailable; prompt saved at: $prompt_file\"",
+      "fi",
+      "if command -v open >/dev/null 2>&1; then",
+      "  open -a Codex >/dev/null 2>&1 || codex app >/dev/null 2>&1 || true",
+      "elif command -v codex >/dev/null 2>&1; then",
+      "  codex app >/dev/null 2>&1 || true",
+      "fi",
+      `echo ${shellQuote(pasteMessage)}`,
+    ].join("\n")],
+  };
+}
+
 function codexAutomationInstallPrompt(config) {
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "your local timezone";
   const weekdayNames = {
@@ -610,7 +664,7 @@ function runCommand(action, config, options = {}) {
   if (config.obsidianSkillsRepo) env.OBSIDIAN_SKILLS_REPO = config.obsidianSkillsRepo;
   if (config.obsidianSkillsDir) env.OBSIDIAN_SKILLS_DIR = config.obsidianSkillsDir;
 
-  let cmd = "bash";
+  let cmd = bashPath();
   let commandArgs = [];
 
   if (action === "setup") {
@@ -625,55 +679,35 @@ function runCommand(action, config, options = {}) {
     fs.mkdirSync(metaDir, { recursive: true });
     const promptPath = path.join(metaDir, "codex-automation-install-prompt.md");
     fs.writeFileSync(promptPath, codexAutomationInstallPrompt(config));
-    commandArgs = ["-lc", [
-      `prompt_file=${shellQuote(promptPath)}`,
-      "if command -v pbcopy >/dev/null 2>&1; then",
-      "  pbcopy < \"$prompt_file\"",
-      "  echo \"Copied Codex automation install prompt to clipboard.\"",
-      "elif command -v clip.exe >/dev/null 2>&1; then",
-      "  clip.exe < \"$prompt_file\"",
-      "  echo \"Copied Codex automation install prompt to clipboard.\"",
-      "else",
-      "  echo \"Clipboard copy is unavailable; prompt saved at: $prompt_file\"",
-      "fi",
-      "if command -v cmd.exe >/dev/null 2>&1; then",
-      '  cmd.exe /c start "" "codex://threads/new" >/dev/null 2>&1',
-      "elif command -v open >/dev/null 2>&1; then",
-      "  open -a Codex >/dev/null 2>&1 || codex app >/dev/null 2>&1 || true",
-      "elif command -v codex >/dev/null 2>&1; then",
-      "  codex app >/dev/null 2>&1 || true",
-      "fi",
-      "echo \"Paste the prompt into Codex App to create/update the daily and weekly loops.\"",
-    ].join("\n")];
+    const command = copyPromptAndOpenCodex(
+      promptPath,
+      "Copied Codex automation install prompt to clipboard.",
+      "Paste the prompt into Codex App to create/update the daily and weekly loops.",
+    );
+    cmd = command.cmd;
+    commandArgs = command.args;
   } else if (action === "prepare-codex-recent-week") {
     fs.mkdirSync(metaDir, { recursive: true });
     const promptPath = path.join(metaDir, "codex-recent-week-prompt.md");
     fs.writeFileSync(promptPath, codexRecentWeekPrompt());
-    commandArgs = ["-lc", [
-      `prompt_file=${shellQuote(promptPath)}`,
-      "if command -v pbcopy >/dev/null 2>&1; then",
-      "  pbcopy < \"$prompt_file\"",
-      "  echo \"Copied recent-week wiki prompt to clipboard.\"",
-      "elif command -v clip.exe >/dev/null 2>&1; then",
-      "  clip.exe < \"$prompt_file\"",
-      "  echo \"Copied recent-week wiki prompt to clipboard.\"",
-      "else",
-      "  echo \"Clipboard copy is unavailable; prompt saved at: $prompt_file\"",
-      "fi",
-      "if command -v cmd.exe >/dev/null 2>&1; then",
-      '  cmd.exe /c start "" "codex://threads/new" >/dev/null 2>&1',
-      "elif command -v open >/dev/null 2>&1; then",
-      "  open -a Codex >/dev/null 2>&1 || codex app >/dev/null 2>&1 || true",
-      "elif command -v codex >/dev/null 2>&1; then",
-      "  codex app >/dev/null 2>&1 || true",
-      "fi",
-      "echo \"Paste the prompt into Codex App to summarize the recent week.\"",
-    ].join("\n")];
+    const command = copyPromptAndOpenCodex(
+      promptPath,
+      "Copied recent-week wiki prompt to clipboard.",
+      "Paste the prompt into Codex App to summarize the recent week.",
+    );
+    cmd = command.cmd;
+    commandArgs = command.args;
   } else if (action === "open-obsidian") {
     commandArgs = ["scripts/install-resources.sh", "open-obsidian"];
   } else if (action === "open-detected-obsidian-app") {
     const obsidianAppPath = resourceStatus(config).obsidianApp?.path || "/Applications/Obsidian.app";
-    commandArgs = openAppCommand("Obsidian", obsidianAppPath);
+    const windowsCommand = windowsCommandPath();
+    if (windowsCommand) {
+      cmd = windowsCommand;
+      commandArgs = ["/c", "start", "", obsidianAppPath];
+    } else {
+      commandArgs = openAppCommand("Obsidian", obsidianAppPath);
+    }
   } else if (action === "install-obsidian-app") {
     commandArgs = ["scripts/install-resources.sh", "install-obsidian-app"];
   } else if (action === "open-obsidian-skills-github") {
@@ -718,6 +752,13 @@ function runCommand(action, config, options = {}) {
     commandArgs = openPathCommand(path.join(repoRoot, "wiki", "guardrails"));
   } else {
     return Promise.resolve({ code: 2, output: `Unsupported action: ${action}\n` });
+  }
+
+  if (!cmd) {
+    return Promise.resolve({
+      code: 1,
+      output: "Git Bash is required to run local setup on Windows. Install Git for Windows, then restart this setup page:\nhttps://git-scm.com/download/win\n",
+    });
   }
 
   return new Promise((resolve) => {
