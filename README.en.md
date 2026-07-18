@@ -1,4 +1,4 @@
-# LLM Wiki Agent Memory
+# Coding Agent Memory
 
 **Make Codex and Claude Code remember your engineering work.** Turn local coding sessions into an auditable Markdown wiki, then retrieve prior decisions and debugging context from any repo.
 
@@ -6,7 +6,7 @@
 
 [中文](README.md)
 
-![LLM Wiki Agent Memory demo](docs/assets/demo.gif)
+![Coding Agent Memory demo](docs/assets/demo.gif)
 
 ### What This Is
 
@@ -32,11 +32,11 @@ Use it when:
 
 Architecture: local sessions produce one bounded Evidence Snapshot, compile into Daily Wiki pages, get promoted by Weekly Review, and return to future tasks through the memory loader.
 
-![LLM Wiki Agent Memory architecture](docs/agent-memory-arch-sketch-en.png)
+![Coding Agent Memory architecture](docs/agent-memory-arch-sketch-en.png)
 
 Flywheel: Daily records, Weekly lints / merges / promotes, and Apply brings lessons back into future tasks.
 
-![LLM Wiki Agent Memory flywheel](docs/agent-memory-loop-flywheel-en.png)
+![Coding Agent Memory flywheel](docs/agent-memory-loop-flywheel-en.png)
 
 <sub>Both diagrams above were created with the [miniLV/sketchboard-diagram](https://github.com/miniLV/sketchboard-diagram) agent skill, which generates hand-drawn whiteboard-style HTML diagrams and exports them as PNG.</sub>
 
@@ -48,14 +48,14 @@ The repository's synthetic fixtures do not read personal sessions. This command 
 node --test scripts/*.test.mjs && node scripts/wiki-lint.mjs --strict
 ```
 
-These checks reproduce the deterministic local pipeline and provenance constraints. They are not presented as a real-user benchmark and do not measure how well an Agent answers future engineering questions. That evaluation is being designed in [#4](https://github.com/miniLV/llm-wiki-agent-memory/issues/4); [SCHEMA.md](SCHEMA.md) remains the sole definition of the memory model.
+These checks reproduce the deterministic local pipeline and provenance constraints. They are not presented as a real-user benchmark and do not measure how well an Agent answers future engineering questions. That evaluation is being designed in [#4](https://github.com/miniLV/coding-agent-memory/issues/4); [SCHEMA.md](SCHEMA.md) remains the sole definition of the memory model.
 
 ### Quick Start
 
 Send this directly in an existing Codex project task:
 
 ```text
-Help me install [miniLV/llm-wiki-agent-memory](https://github.com/miniLV/llm-wiki-agent-memory)
+Help me install [miniLV/coding-agent-memory](https://github.com/miniLV/coding-agent-memory)
 ```
 
 Codex clones the repository below the current project, reads its setup instructions, and performs a read-only preflight. Then the conversation continues with one confirmation:
@@ -81,7 +81,7 @@ The repository does not need to be registered as a separate Codex project. The i
 Manual clone remains available as a fallback:
 
 ```bash
-git clone https://github.com/miniLV/llm-wiki-agent-memory.git
+git clone https://github.com/miniLV/coding-agent-memory.git
 ```
 
 ### Uninstall
@@ -119,11 +119,11 @@ bash scripts/uninstall.sh --yes --purge-local-state --json
 The local page is an optional status, diagnostics, and recovery surface:
 
 ```bash
-cd llm-wiki-agent-memory
+cd coding-agent-memory
 bash scripts/config-ui.sh --open
 ```
 
-![LLM Wiki Agent Memory local config UI](docs/assets/local-config-ui-en.png)
+![Coding Agent Memory local config UI](docs/assets/local-config-ui-en.png)
 
 The page binds only to `127.0.0.1`. Use it to:
 
