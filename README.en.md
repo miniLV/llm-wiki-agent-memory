@@ -52,6 +52,8 @@ These checks reproduce the deterministic local pipeline and provenance constrain
 
 ### Quick Start
 
+> Use the Agent-first flow below directly from `master`. The `v0.0.1` entry on the Releases page is an early historical snapshot and does not include the current setup and verification flow.
+
 Send this directly in an existing Codex project task:
 
 ```text
